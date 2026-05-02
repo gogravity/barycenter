@@ -12,6 +12,19 @@ The name reflects the architecture: the gravitational center where data from man
 
 This is the load-bearing claim of the entire platform. The two-zone model, identifier hierarchy, agent grants, and CUI exclusion controls all serve this single property. Every design tradeoff resolves toward "is the leak boundary still architectural, not procedural?"
 
+## Current Milestone: v1.0 — Barycenter MVP
+
+**Goal:** Build the complete Barycenter platform — two-zone Azure SQL data layer with FortiGate network perimeter, five-layer defense, CW Manage / Pax8 / Graph integrations, owned AI gateway, VER-01 leak test in CI, and HIPAA compliance posture.
+
+**Target features:**
+- Block A — Foundations: FortiGate hub-and-spoke, schema topology, identity boundary, audit plane, salt-in-Key-Vault
+- Block B — Tool Onboarding Framework + ConnectWise Manage (INT-01)
+- Block C — Agent-Safe Access Layer: typed functions, owned FastAPI gateway, VER-01 leak test in CI
+- Block D — Pax8 (INT-02) + Microsoft Graph (INT-03)
+- Block E — HIPAA compliance posture, CUI controls, erasure workflow, on-call alerting
+
+**Stack (revised 2026-05-02):** Azure SQL Serverless GP · FortiGate NVA BYOL (F2s_v2) · Owned FastAPI gateway (~300 LOC) · Log Analytics + WORM blob · 4 managed identities · 1 Key Vault · ~$166/mo
+
 ## Requirements
 
 ### Validated
@@ -116,7 +129,7 @@ Email never reaches AI zone. Hostnames, MACs, IPs are sensitive and are either d
 
 **Compliance posture.**
 - **HIPAA = mandatory floor.** Gravity has healthcare customers handling PHI; HIPAA breach notification, BAAs, audit retention, and access controls are required, not optional.
-- **SOC 2 Type II = aspirational, build for it.** B2B customer security questionnaires increasingly demand SOC 2. Architecture and controls align with SOC 2 trust criteria from day one; formal evidence collection and audit pursuit are a future decision.
+- **SOC 2 Type II = deferred.** Dropped from v1.0 scope. Controls that overlap with HIPAA are re-homed to HIPAA requirements. Revisit when SOC 2 pursuit begins.
 - **CMMC L2 = explicitly out.** No current DoD revenue. CUI exclusion controls (COMP-03) make the boundary technically enforceable instead of procedural.
 
 **Existing tools, no existing code.** The source tools (CW Manage, Pax8, Graph, etc.) are already in production at Gravity — Barycenter syncs from them. There is no prior Barycenter code to inherit; the parent Gravitron repo had a security-spec draft that informs design but is not load-bearing.
@@ -125,13 +138,15 @@ Email never reaches AI zone. Hostnames, MACs, IPs are sensitive and are either d
 
 ## Constraints
 
-- **Tech stack — Azure SQL Database**: single instance, schema isolation between raw and AI zones. Why: matches Gravity's existing Azure footprint; schema-level grants are battle-tested; avoids the operational overhead of two separate databases while preserving isolation.
+- **Tech stack — Azure SQL Serverless (General Purpose)**: schema isolation between raw and AI zones, standard Gen5 hardware, auto-pause enabled. Why: schema-level grants are battle-tested; Serverless auto-pause fits infrequent agent query patterns and keeps cost under $50/mo; DC-series (Always Encrypted enclaves) dropped — CMMC is out of scope and TDE satisfies HIPAA §164.312.
+- **Tech stack — FortiGate NVA (BYOL, hub-and-spoke)**: Gravity's Fortinet MSSP licensing; FortiGate-VM02 on Standard_F2s_v2 in Azure hub VNet. Why: provides outbound FQDN allowlisting, IDS/IPS, and subnet isolation at the network layer — stronger than per-application controls because it enforces before any code runs.
 - **Tech stack — Microsoft Azure as cloud**: Gravity is M365-centric and the source tools are Azure-adjacent. Why: minimizes egress, simplifies BAA coverage, single identity plane (Entra ID).
-- **Tech stack — Anthropic Claude as LLM**: Enterprise plan with BAA and zero-retention confirmation. Why: required for HIPAA-defensible AI; alternatives don't change Barycenter's architecture (gateway abstracts the model).
+- **Tech stack — Anthropic Claude as LLM**: BAA + ZDR confirmed in writing; Messages API + prompt caching + structured outputs only. Why: required for HIPAA-defensible AI. Batch API, Files API, Computer Use, Web Fetch, Code Execution are NOT BAA-covered and must be blocked at the gateway.
+- **Tech stack — Owned FastAPI gateway (~300 LOC)**: replaces Azure API Management. Why: APIM Standard v2 is ~$250/mo alone — over budget. Owned gateway with Presidio PII scanning, canary checks, fail-closed audit emit, and model allowlist satisfies HIPAA Technical Safeguards with lower operational cost.
+- **Budget — under $200/mo total Azure infrastructure**: FortiGate VM (~$62) + SQL Serverless (~$50) + Container Apps (~$20) + Key Vault + Storage + Log Analytics + Defender ≈ $166/mo. Why: internal MSP tool; cost must scale with Gravity's operational budget, not enterprise product assumptions.
 - **Security — architectural over procedural**: every control must be enforced by code or configuration, not by someone remembering. Why: regulated environments and incident response require provable, auditable boundaries.
 - **Compliance — HIPAA is the floor**: every design decision is HIPAA-compatible by default. Why: Gravity has PHI-handling customers; non-HIPAA modes add operational divergence we don't want.
 - **Performance — sync-time filtering on CUI customers**: enforced in every adapter. Why: technical enforcement of "we don't process CUI" claim — attestation alone is not defensible.
-- **Performance — production sizing flag**: dev environments use Basic 5-DTU only; production tier sized to 5-year volume estimates. Why: Basic tier collapses under real ingestion load; surfacing this prevents accidental prod misconfig.
 - **Dependencies — agents are downstream consumers**: Barycenter ships its API contract; agents adapt. Why: prevents agent-side requirements from leaking into the security architecture.
 
 ## Key Decisions
@@ -148,8 +163,10 @@ Email never reaches AI zone. Hostnames, MACs, IPs are sensitive and are either d
 | Agents are downstream consumers, not co-tenants | Barycenter owns the API contract. Forces discipline at the boundary; prevents agent-specific concerns from polluting the data layer. | — Pending |
 | Eight standard transformation primitives + four canonical AI-zone shapes | New tools compose ETL from primitives and contribute to existing shapes — they cannot invent novel AI-zone tables. Keeps the agent's mental model stable as tool count grows. | — Pending |
 | Five-layer defense (schema permissions → views → typed functions → gateway → audit) | Each layer independently sufficient against most threat classes. All five must fail simultaneously for a leak. | — Pending |
-| Always Encrypted on RESTRICTED columns; CMK-architected but Azure-managed keys for now | AE protects against DBA-level threats. Architecture allows customer-managed keys when a customer demands them, without rebuild. | — Pending |
-| Immutable + cryptographically chained audit log; mirrored to Azure Sentinel | A compromised primary system cannot tamper its own audit log. Off-system SIEM gives independent observability. Cheapest highest-leverage defensive upgrade. | — Pending |
+| TDE (not Always Encrypted) on RESTRICTED columns; architecture allows AE upgrade later | AE with DC-series enclaves was CMMC-driven defensive depth, not a HIPAA requirement. TDE (AES-256) satisfies §164.312(a)(2)(iv). DBA-level threat mitigated by PIM JIT dual-approval + no standing `db_owner` + audit-of-audit. Upgrade path preserved. | — Pending |
+| Cryptographically chained audit log to Log Analytics (90-day) + WORM blob (6-year); Sentinel deferred | HIPAA §164.312(b) audit controls satisfied by Log Analytics + WORM. Sentinel adds threat detection and SOC 2 evidence but costs scale with log volume. Deferred until SOC 2 pursuit begins. | — Pending |
+| FortiGate NVA (BYOL hub-and-spoke) as network perimeter | FortiGate enforces outbound FQDN allowlist + IDS/IPS + subnet isolation at the network layer before any application code runs. Gravity's MSSP licensing makes VM compute the only cost (~$62/mo). Stronger than per-application VNet rules. | — Pending |
+| Owned FastAPI gateway (~300 LOC) instead of Azure API Management | APIM Standard v2 is ~$250/mo — exceeds budget. Custom gateway with Presidio, canary checks, fail-closed audit emit, and model allowlist satisfies HIPAA Technical Safeguards. Evidence artifacts: git history, signed container SHAs, CI test suite, STRIDE threat model, annual pen test. | — Pending |
 
 ## Evolution
 
@@ -169,4 +186,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-01 after initialization*
+*Last updated: 2026-05-02 — v1.0 milestone started; architecture revised (cost-simplified, FortiGate hub-and-spoke, TDE not AE, owned gateway not APIM, HIPAA-only)*
