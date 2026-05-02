@@ -34,8 +34,8 @@
 - [x] 01-02-PLAN.md — OIDC bootstrap (mi-bary-deploy + federated credentials) [checkpoint]
 - [x] 01-03-PLAN.md — Identity Bicep (4 MIs + PIM eligibility for admin) (Wave 1)
 - [x] 01-04-PLAN.md — Networking Bicep (hub + FortiGate + spoke + recursion-safe UDR + policies.json) (Wave 1)
-- [ ] 01-05-PLAN.md — Data Bicep (SQL Serverless + KV) + SQL schemas/grants/genesis seed + field-class registry (Wave 2)
-- [ ] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
+- [x] 01-05-PLAN.md — Data Bicep (SQL Serverless + KV) + SQL schemas/grants/genesis seed + field-class registry (Wave 2)
+- [x] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
 - [ ] 01-07-PLAN.md — Audit SDK implementation (TDD: chain + sinks + AuditClient.emit fail-closed) (Wave 3)
 - [ ] 01-08-PLAN.md — CI scripts + GitHub Actions workflows (VER-02, NETW-02, AUDIT-01, Pitfall-1 grants) (Wave 3)
 - [ ] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
