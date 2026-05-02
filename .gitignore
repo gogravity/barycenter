@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.bicep/
+.azure/
+*.bicep.json
+.DS_Store
+.env
+.env.*
+!.env.example

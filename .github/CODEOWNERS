@@ -1,0 +1,8 @@
+# Barycenter CODEOWNERS — IDENT-04
+# Every PR requires a code owner approval.
+*                       @gravity/barycenter-maintainers
+/infra/                 @gravity/barycenter-infra
+/sql/                   @gravity/barycenter-data
+/packages/barycenter-audit/  @gravity/barycenter-audit
+/compliance/            @gravity/barycenter-compliance
+/.github/               @gravity/barycenter-maintainers

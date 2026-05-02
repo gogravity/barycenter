@@ -1,0 +1,10 @@
+[project]
+name = "barycenter-workspace"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Barycenter mono-repo workspace marker"
+
+[tool.pytest.ini_options]
+testpaths = ["packages/barycenter-audit/tests"]
+addopts = "-x -q"
+pythonpath = ["packages/barycenter-audit/src"]
