@@ -3,7 +3,7 @@ phase: 01-network-data-foundations
 plan: 02
 subsystem: identity-bootstrap
 tags: [oidc, managed-identity, github-actions, federated-credentials, azure-bootstrap]
-status: paused-at-checkpoint
+status: complete
 dependency_graph:
   requires:
     - "Subscription Owner-capable human admin"
@@ -35,15 +35,25 @@ decisions:
   - "Two managed identities (mi-bary-deploy, mi-bary-whatif) instead of one — main-branch deploy gets Contributor + UAA, PR what-if gets Reader only (least privilege per branch)"
   - "Federated credential subjects pinned to refs/heads/main and pull_request — no wildcard subjects per Pitfall 11; adding prod requires new MI + new FIC"
 metrics:
-  duration: "Task 1 only (script authoring) — checkpoint reached at Task 2"
+  duration: "Task 1 (script authoring) + Task 2 (human admin bootstrap execution)"
   completed: "2026-05-02"
-  tasks_completed: 1
+  tasks_completed: 2
   tasks_total: 2
 ---
 
 # Phase 1 Plan 02: Identity Bootstrap (OIDC) Summary
 
-**One-liner:** Idempotent `bootstrap-oidc.sh` authored to create `mi-bary-deploy` + `mi-bary-whatif` UAMIs with env-scoped federated credentials for GitHub Actions OIDC; execution paused at human-action checkpoint awaiting interactive `az login` by subscription Owner.
+**One-liner:** Idempotent `bootstrap-oidc.sh` authored and executed by subscription Owner — `mi-bary-deploy` + `mi-bary-whatif` UAMIs now live in `rg-barycenter-identity` with env-scoped federated credentials (no wildcards) and least-privilege role assignments scoped to `rg-barycenter-dev`; GitHub repo variables deferred until `gogravity/barycenter` repo is created.
+
+## Completion Status
+
+**Plan complete (2/2 tasks).** Bootstrap was executed by Craig Vickers on 2026-05-02:
+
+- `mi-bary-deploy` (clientId `03e530ba-78a8-4bbb-993e-96646d922e13`) created in `rg-barycenter-identity` with FIC subject `repo:gogravity/barycenter:ref:refs/heads/main` and Contributor + User Access Administrator on `rg-barycenter-dev`.
+- `mi-bary-whatif` (clientId `6478ed2b-42ff-412c-80cf-c48d3f6d2084`) created in `rg-barycenter-identity` with FIC subject `repo:gogravity/barycenter:pull_request` and Reader on `rg-barycenter-dev`.
+- All FIC subjects are env-scoped — Pitfall 11 verified (no wildcards).
+- Evidence committed at `.planning/phases/01-network-data-foundations/oidc-bootstrap-evidence.md` (commit `a5f5734`).
+- **GitHub repo variables deferred:** the `gogravity/barycenter` repo does not yet exist. The four `AZURE_*` values are recorded in the evidence file with ready-to-run `gh variable set` commands; they must be applied before plans 03-09 can run their OIDC-based deploys.
 
 ## What Was Built (Task 1)
 
@@ -172,11 +182,13 @@ None.
 | Task | Commit  | Description                                                |
 | ---- | ------- | ---------------------------------------------------------- |
 | 1    | dfa6c40 | feat(01-02): add OIDC bootstrap script and pre-flight README |
-| 2    | —       | Pending human admin (checkpoint:human-action)              |
+| 2    | a5f5734 | docs(01-02): commit OIDC bootstrap evidence — mi-bary-deploy + mi-bary-whatif created in rg-barycenter-identity |
 
 ## Self-Check: PASSED
 
 - `scripts/deploy/bootstrap-oidc.sh` — FOUND (executable, syntactically valid)
 - `scripts/deploy/README.md` — FOUND
-- Commit `dfa6c40` — FOUND in git log
-- No claims of completed Azure resources (correctly deferred to checkpoint)
+- `.planning/phases/01-network-data-foundations/oidc-bootstrap-evidence.md` — FOUND
+- Commit `dfa6c40` (script + README) — FOUND in git log
+- Commit `a5f5734` (evidence) — FOUND in git log
+- Plan complete: both tasks executed; only deferred item is GitHub repo variables, gated on `gogravity/barycenter` repo creation (tracked in evidence file with ready-to-run commands)
