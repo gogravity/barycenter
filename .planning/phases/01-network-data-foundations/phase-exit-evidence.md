@@ -70,66 +70,54 @@ See `compliance/runbooks/conditional-access-mfa.md` for full creation instructio
 
 ### COMP-06 — BAA inventory
 
-- [ ] Microsoft BAA reference (Service Trust Portal attestation) committed and dated in `compliance/baa/microsoft-baa-reference.md`
-- [ ] Anthropic BAA signed PDF committed at `compliance/baa/anthropic-baa.pdf`
-- [ ] Anthropic ZDR written confirmation committed at `compliance/baa/anthropic-zdr-confirmation.md` (replaced placeholder; all six required fields populated)
-- [ ] `compliance/baa-inventory.md` "Last reviewed" and "Next review due" dates populated
-- [ ] All three section "Status" fields updated from `_pending_` to `_confirmed [YYYY-MM-DD]_`
+- [x] Microsoft BAA reference committed and dated — `compliance/baa/microsoft-baa-reference.md` (confirmed 2026-05-02 via OST on subscription debe8a68)
+- [ ] Anthropic BAA signed PDF committed at `compliance/baa/anthropic-baa.pdf` — **PENDING LEGAL REVIEW** (exception path active per plan 09)
+- [ ] Anthropic ZDR written confirmation — **PENDING** (placeholder in `compliance/baa/anthropic-zdr-confirmation.md`; replace with real Anthropic written confirmation)
+- [x] `compliance/baa-inventory.md` Last reviewed: 2026-05-02; Next review due: 2027-05-02
+- [ ] All three section "Status" fields updated — Microsoft confirmed; Anthropic BAA + ZDR pending
+
+**Open issue:** Anthropic BAA + ZDR confirmation required before COMP-06 is fully met. Compensating control: Microsoft BAA covers all Azure services; Anthropic API usage blocked at network layer (FortiGate + UDR) until BAA is executed.
 
 **Evidence:**
 
 ```
-[paste git log of compliance/ commits here]
+git log --oneline compliance/ → fdc6400 docs(01-09): task 3 — Microsoft BAA confirmed via OST
 ```
 
 ### EGRESS-01 + NETW-03 — Live deny verification
 
-- [ ] Synthetic traffic test: from etl-subnet, attempt `curl https://api.anthropic.com/`. Result: connection denied/timed out.
-- [ ] LA query within 5 minutes shows the deny event with `policyid` matching `etl-to-anthropic-deny`.
-- [ ] Synthetic traffic test: from services-subnet, attempt `curl https://api.connectwise.com/`. Result: denied.
-- [ ] LA query shows `services-to-source-tools-deny` event.
-- [ ] Synthetic traffic test: from services-subnet, `curl https://api.anthropic.com/` → allowed (services may reach Anthropic; etl may not). Verifies positive control.
-- [ ] Test VMs deleted after verification (sweeper — see T-1-09-05).
+**Status: BLOCKED on infrastructure deployment.** Bicep templates exist (plans 04, 06) but `az deployment group create` has not been run yet. Required before this section can be verified.
 
-**Evidence:**
-
-```
-[paste curl exit codes + LA query JSON results here]
-```
+- [ ] Synthetic traffic test: from etl-subnet, `curl https://api.anthropic.com/` → denied
+- [ ] LA query shows `etl-to-anthropic-deny` event within 5 min
+- [ ] Synthetic traffic test: from services-subnet, `curl https://api.connectwise.com/` → denied
+- [ ] LA query shows `services-to-source-tools-deny` event
+- [ ] Positive control: services-subnet → api.anthropic.com → allowed
+- [ ] Test VMs deleted after verification
 
 ### AUDIT-03 — WORM lock + Pitfall 7 cleanup
 
-- [ ] `az storage container immutability-policy show` returns `state: Locked`, `immutabilityPeriodSinceCreationInDays: 2190`
-- [ ] Attempted shorten via `az storage container immutability-policy extend --period 30` was rejected
-- [ ] Test WORM storage account from plan 06 is no longer present (`az storage account show --name stbarywormtest1` returns NotFound)
-- [ ] `pytest tests/integration/test_worm_lock.py -v` passes
+**Status: BLOCKED on infrastructure deployment.** `stbarywormtest1` was never deployed (verified: `az storage account show --name stbarywormtest1` → NotFound). WORM production account has not been deployed yet.
 
-**Evidence:**
-
-```
-[paste az output + pytest output here]
-```
+- [x] `stbarywormtest1` not present (Pitfall 7 N/A — never deployed) — verified 2026-05-02
+- [ ] Production WORM account deployed and locked — blocked on `az deployment group create infra/audit/`
+- [ ] `pytest tests/integration/test_worm_lock.py -v` — blocked on deployment
 
 ### IDENT-05 — PIM dual approval
 
-- [ ] Role management policy on `mi-bary-admin` raw_* role configured with `isApprovalRequired: true` and 2 primary approvers
-- [ ] Test activation by admin with single approver was REJECTED (remained pending)
-- [ ] Test activation with 2 approvers SUCCEEDED with audit trail in PIM Sign-In logs
+**Status: BLOCKED on infrastructure deployment + Entra PIM configuration.**
 
-**Evidence:**
-
-```
-[paste PIM portal screenshot filenames here]
-```
+- [ ] Role management policy on `mi-bary-admin` raw_* role — blocked on identity stack deployment
+- [ ] Dual-approver test — blocked on deployment
 
 ### Other Phase 1 sweepers
 
-- [ ] mi-bary-deploy KV Administrator role assignment removed (post Wave-0 cleanup; tracked in plan 05 README) — paste `az role assignment delete` timestamp
-- [ ] FortiGate license actually installed on the VM (not just placeholder); `fgt-cli get system status` shows valid Serial-Number and License Status: Valid
-- [ ] FortiGate API token created in KV (`kv-bary-dev/secrets/fortigate-api-token`) for nightly drift detector — `attributes.enabled: true`
-- [ ] LA workspace ingestion endpoint substituted into FortiGate `policies.json` (no `REPLACED_BY_DEPLOY_PIPELINE` remaining)
-- [ ] All audit SDK integration tests passing in CI run on this commit (`gh run list --workflow=audit-chain-validate.yml --limit=1` shows conclusion=success for both `self-test` and `live-validate`)
-- [ ] Secret scanning enabled at GitHub repo level (T-1-09-12 mitigation)
+- [ ] mi-bary-deploy KV Administrator role removed — blocked on data stack deployment (`infra/data/`)
+- [ ] FortiGate license installed on VM — blocked on network stack deployment (`infra/networking/`)
+- [ ] FortiGate API token in KV — blocked on data + network stack deployment
+- [ ] `policies.json` REPLACED_BY_DEPLOY_PIPELINE substituted — by design: CI step at deploy time (not a pre-deploy requirement)
+- [ ] audit-chain-validate workflow green — blocked on deployment + first workflow run
+- [x] Secret scanning enabled — confirmed 2026-05-02 (`secret_scanning: enabled` on gogravity/barycenter)
 
 **Evidence:**
 
