@@ -3,11 +3,16 @@
 # CI gate (scripts/ci/field_class_check.py — plan 08) fails any PR that adds a column without a tag
 # or changes a class without a reviewer comment.
 version: 1
-schemas: {}
-# Example shape (do not commit until raw_cw.companies actually exists):
-# schemas:
-#   raw_cw:
-#     companies:
-#       cw_company_id: INTERNAL
-#       company_name: SENSITIVE
-#       billing_address: RESTRICTED
+schemas:
+  raw_cw:
+    companies:
+      cw_company_id:           INTERNAL
+      company_name:            SENSITIVE
+      billing_address_line1:   RESTRICTED
+      billing_address_city:    SENSITIVE
+      billing_address_region:  SENSITIVE
+      cui_handling_required:   INTERNAL
+      ai_opt_out:              INTERNAL
+      ai_opt_out_classes:      INTERNAL
+      synced_at:               INTERNAL
+      source_etag:             INTERNAL
