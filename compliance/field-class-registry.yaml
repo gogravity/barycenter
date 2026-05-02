@@ -1,0 +1,13 @@
+# VER-02 source of truth. Every column in every raw_* schema MUST appear here with one of:
+# RESTRICTED | SENSITIVE | INTERNAL | PUBLIC
+# CI gate (scripts/ci/field_class_check.py — plan 08) fails any PR that adds a column without a tag
+# or changes a class without a reviewer comment.
+version: 1
+schemas: {}
+# Example shape (do not commit until raw_cw.companies actually exists):
+# schemas:
+#   raw_cw:
+#     companies:
+#       cw_company_id: INTERNAL
+#       company_name: SENSITIVE
+#       billing_address: RESTRICTED
