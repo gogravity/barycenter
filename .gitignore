@@ -1,0 +1,15 @@
+# Bicep build artifacts (ARM JSON output of `az bicep build`)
+infra/**/*.json
+!infra/**/fortigate-config/*.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+
+# Secrets that must never be committed
+*.lic
+*.pem
+*.key
+.env
+.env.*
+!.env.example
