@@ -30,10 +30,10 @@
   4. All four managed identities (etl, platform, audit, admin) exist with no long-lived secrets; PIM JIT with dual-approval is the only path to `raw_*` access; main branch is protected with required signed commits and CI checks.
   5. Per-tenant HMAC salts live in Key Vault, accessed only by the etl identity via a sign operation (never returned in plaintext), and the BAA inventory document (Microsoft + Anthropic + ZDR confirmation) is committed to the repo.
 **Plans**: 9 plans
-- [ ] 01-01-PLAN.md — Repo bootstrap + audit SDK skeleton + compliance scaffolding (Wave 0)
-- [ ] 01-02-PLAN.md — OIDC bootstrap (mi-bary-deploy + federated credentials) [checkpoint]
-- [ ] 01-03-PLAN.md — Identity Bicep (4 MIs + PIM eligibility for admin) (Wave 1)
-- [ ] 01-04-PLAN.md — Networking Bicep (hub + FortiGate + spoke + recursion-safe UDR + policies.json) (Wave 1)
+- [x] 01-01-PLAN.md — Repo bootstrap + audit SDK skeleton + compliance scaffolding (Wave 0)
+- [x] 01-02-PLAN.md — OIDC bootstrap (mi-bary-deploy + federated credentials) [checkpoint]
+- [x] 01-03-PLAN.md — Identity Bicep (4 MIs + PIM eligibility for admin) (Wave 1)
+- [x] 01-04-PLAN.md — Networking Bicep (hub + FortiGate + spoke + recursion-safe UDR + policies.json) (Wave 1)
 - [ ] 01-05-PLAN.md — Data Bicep (SQL Serverless + KV) + SQL schemas/grants/genesis seed + field-class registry (Wave 2)
 - [ ] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
 - [ ] 01-07-PLAN.md — Audit SDK implementation (TDD: chain + sinks + AuditClient.emit fail-closed) (Wave 3)
