@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "fqdn_objects": [
+    { "name": "anthropic-api", "fqdn": "api.anthropic.com" },
+    { "name": "azure-arm",     "fqdn": "management.azure.com" },
+    { "name": "azure-kv",      "fqdn": "*.vault.azure.net" },
+    { "name": "azure-blob",    "fqdn": "*.blob.core.windows.net" },
+    { "name": "azure-sql",     "fqdn": "*.database.windows.net" },
+    { "name": "azure-monitor", "fqdn": "*.monitor.azure.com" },
+    { "name": "cw-manage",     "fqdn": "*.connectwise.com" }
+  ],
+  "policies": [
+    {
+      "name": "etl-to-anthropic-deny",
+      "comment": "EGRESS-01: ETL spoke must not reach Anthropic; only the gateway in services-subnet may.",
+      "src_intf": "spoke-trust", "src_addr": ["etl-subnet"],
+      "dst_intf": "untrust",     "dst_addr": ["anthropic-api"],
+      "action": "deny", "logtraffic": "all"
+    },
+    {
+      "name": "services-to-source-tools-deny",
+      "comment": "Services spoke (gateway) must not reach raw source tools; only ETL may.",
+      "src_intf": "spoke-trust", "src_addr": ["services-subnet"],
+      "dst_intf": "untrust",     "dst_addr": ["cw-manage"],
+      "action": "deny", "logtraffic": "all"
+    },
+    {
+      "name": "services-to-anthropic-allow",
+      "comment": "Gateway (services) IS allowed to reach Anthropic (FQDN allowlist).",
+      "src_intf": "spoke-trust", "src_addr": ["services-subnet"],
+      "dst_intf": "untrust",     "dst_addr": ["anthropic-api"],
+      "action": "accept", "logtraffic": "all"
+    },
+    {
+      "name": "etl-to-source-tools-allow",
+      "src_intf": "spoke-trust", "src_addr": ["etl-subnet"],
+      "dst_intf": "untrust",     "dst_addr": ["cw-manage"],
+      "action": "accept", "logtraffic": "all"
+    },
+    {
+      "name": "spoke-to-azure-mgmt-allow",
+      "src_intf": "spoke-trust", "src_addr": ["etl-subnet", "services-subnet"],
+      "dst_intf": "untrust",     "dst_addr": ["azure-arm", "azure-monitor"],
+      "action": "accept", "logtraffic": "all"
+    },
+    {
+      "name": "default-deny-all",
+      "src_intf": "any", "src_addr": ["all"],
+      "dst_intf": "any", "dst_addr": ["all"],
+      "action": "deny", "logtraffic": "all"
+    }
+  ],
+  "syslog": {
+    "name": "log-analytics-forwarder",
+    "comment": "NETW-03: forward IDS/IPS, traffic, deny logs to LA workspace (target IP/port wired post plan 06 deploy).",
+    "server": "REPLACED_BY_DEPLOY_PIPELINE",
+    "port": 514,
+    "facility": "local7",
+    "source-ip": "10.10.1.4"
+  }
+}
