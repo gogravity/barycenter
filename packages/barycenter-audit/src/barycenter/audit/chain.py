@@ -1,22 +1,52 @@
-"""SHA-256 chain primitives (D-05). Implementation lands in plan 07."""
+"""SHA-256 chain primitives (D-05).
+
+Pure functions ``canonicalize_json`` and ``compute_digest`` plus the
+chain_state SQL helpers ``read_head_locked`` / ``update_head`` and the
+offline ``validate_chain`` verifier.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from barycenter.audit._canonicalize import canonicalize
+from barycenter.audit.exceptions import ChainIntegrityError
+
 GENESIS_HASH: str = "0" * 64
 
 
-def canonicalize_json(obj: dict) -> str:
-    """Stable canonical JSON serialization (sorted keys, no whitespace, UTF-8). Plan 07 implements."""
-    raise NotImplementedError("Implemented in plan 07")
+def canonicalize_json(obj: Any) -> str:
+    """Stable canonical JSON: sorted keys, no whitespace, UTF-8.
+
+    Raises ValueError on unsupported types (sets, custom objects, etc.).
+    Two consecutive calls on the same input return byte-identical output.
+    """
+    return canonicalize(obj)
 
 
 def compute_digest(prior_hex: str, canonical: str) -> str:
-    """Return hex(SHA-256(prior_hex.encode() + canonical.encode())). Plan 07 implements."""
-    raise NotImplementedError("Implemented in plan 07")
+    """Return ``hex(SHA-256(prior_hex.encode() || canonical.encode()))``.
+
+    ``prior_hex`` must be a 64-character hex string (the chain head). The
+    output is exactly 64 lowercase hex characters.
+    """
+    if not isinstance(prior_hex, str) or len(prior_hex) != 64:
+        raise ValueError(f"prior_hex must be a 64-char hex string, got {prior_hex!r}")
+    h = hashlib.sha256()
+    h.update(prior_hex.encode("utf-8"))
+    h.update(canonical.encode("utf-8"))
+    return h.hexdigest()
 
 
 def read_head_locked(cursor) -> str:
-    """SELECT head_digest FROM audit.chain_state WITH (UPDLOCK, ROWLOCK). Plan 07 implements."""
-    raise NotImplementedError("Implemented in plan 07")
+    """SELECT head_digest FROM audit.chain_state WITH (UPDLOCK, ROWLOCK).
+
+    Implemented in plan 07 task 2.
+    """
+    raise NotImplementedError("Implemented in plan 07 task 2")
 
 
 def update_head(cursor, new_digest: str) -> None:
-    """UPDATE audit.chain_state SET head_digest = ?. Plan 07 implements."""
-    raise NotImplementedError("Implemented in plan 07")
+    """UPDATE audit.chain_state SET head_digest = ?. Implemented in plan 07 task 2."""
+    raise NotImplementedError("Implemented in plan 07 task 2")
