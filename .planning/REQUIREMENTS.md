@@ -109,4 +109,49 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| (populated by roadmapper) | | |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| NETW-01 | Phase 1 | Pending |
+| NETW-02 | Phase 1 | Pending |
+| NETW-03 | Phase 1 | Pending |
+| TOOL-01 | Phase 2 | Pending |
+| TOOL-02 | Phase 2 | Pending |
+| TOOL-03 | Phase 2 | Pending |
+| TOOL-04 | Phase 2 | Pending |
+| INT-01 | Phase 2 | Pending |
+| INT-02 | Phase 4 | Pending |
+| INT-03 | Phase 4 | Pending |
+| ACCESS-01 | Phase 3 | Pending |
+| ACCESS-02 | Phase 3 | Pending |
+| ACCESS-03 | Phase 3 | Pending |
+| ACCESS-04 | Phase 3 | Pending |
+| ACCESS-05 | Phase 3 | Pending |
+| ACCESS-06 | Phase 3 | Pending |
+| ACCESS-07 | Phase 3 | Pending |
+| ACCESS-08 | Phase 3 | Pending |
+| COMP-01 | Phase 4 | Pending |
+| COMP-03 | Phase 2 | Pending |
+| COMP-05 | Phase 3 | Pending |
+| COMP-06 | Phase 1 | Pending |
+| COMP-07 | Phase 2 | Pending |
+| AUDIT-01 | Phase 1 | Pending |
+| AUDIT-02 | Phase 1 | Pending |
+| AUDIT-03 | Phase 1 | Pending |
+| IDENT-01 | Phase 1 | Pending |
+| IDENT-02 | Phase 1 | Pending |
+| IDENT-03 | Phase 1 | Pending |
+| IDENT-04 | Phase 1 | Pending |
+| IDENT-05 | Phase 1 | Pending |
+| EGRESS-01 | Phase 1 | Pending |
+| EGRESS-02 | Phase 3 | Pending |
+| ENC-01 | Phase 1 | Pending |
+| ENC-02 | Phase 2 | Pending |
+| RET-01 | Phase 2 | Pending |
+| ERAS-01 | Phase 4 | Pending |
+| VER-01 | Phase 3 | Pending |
+| VER-02 | Phase 1 | Pending |
+| OPS-02 | Phase 4 | Pending |
+
+**Coverage:** 42/42 v1.0 MUST requirements mapped (no orphans, no duplicates).

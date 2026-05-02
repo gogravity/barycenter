@@ -7,45 +7,57 @@
 
 ## Current Position
 
-- **Phase:** Not started (defining requirements → roadmap next)
+- **Phase:** 1 — Network & Data Foundations (not yet planned)
 - **Plan:** —
-- **Status:** Milestone v1.0 started; requirements defined; roadmap pending
+- **Status:** Roadmap created; ready for `/gsd-plan-phase 1`
 
 ## Progress
 
-`[█░░░░░░░░░] 10%` — initialization + research complete
+`[██░░░░░░░░] 20%` — initialization + research + roadmap complete
 
 ## Recent Decisions
 
-See PROJECT.md "Key Decisions" — 12 architectural decisions logged (two-zone schema isolation, HMAC pid, five-layer defense, etc.). All currently `Pending` until validated by phase outcomes.
+See PROJECT.md "Key Decisions" — 12 architectural decisions logged. All currently `Pending` until validated by phase outcomes.
 
-Research surfaced spine: Foundations → Tool Onboarding Framework + Tool #1 → Agent-Safe Access Layer + Leak Test → Tools #2/#3 → Compliance Posture.
+Roadmap commits to 4 phases derived from the research-recommended build order:
+1. Network & Data Foundations (FortiGate, two-zone SQL, identities, audit, salt)
+2. Tool Onboarding Framework + ConnectWise Manage (INT-01)
+3. Agent-Safe Access Layer + VER-01 Leak Test in CI
+4. Pax8 + Graph + HIPAA posture + erasure + on-call
+
+42/42 v1.0 MUST requirements mapped; INT-04 explicitly deferred to v1.1.
 
 ## Pending Todos
 
-None captured.
+None captured — next action is `/gsd-plan-phase 1`.
 
 ## Blockers / Concerns
 
-7 LOAD-BEARING pitfalls front-loaded by research (see `research/PITFALLS.md`):
+7 LOAD-BEARING pitfalls front-loaded by research (see `research/PITFALLS.md` if present, else SUMMARY.md):
 1. Indirect prompt injection via tool-sourced free text
-2. HMAC pid reversibility
+2. HMAC pid reversibility on low-entropy emails
 3. Multi-hop reasoning re-identification
-4. Anthropic BAA / ZDR scope misunderstood
-5. CUI exclusion flag enforcement gaps
-6. Audit log volume / truncation
-7. Temporary developer raw-zone access becoming permanent
+4. Anthropic BAA / ZDR scope must be confirmed before Phase 3
+5. CUI exclusion flag enforcement gaps (mitigated by framework-layer enforcement in P2)
+6. Audit log volume / truncation under cost pressure (mitigated by tiered LA + WORM)
+7. Temporary developer raw-zone access becoming permanent (mitigated by PIM JIT + grant drift detector in P1)
+
+Research flags requiring validation during planning:
+- **Phase 3:** Anthropic BAA scope (pinned models, workspace isolation, ZDR confirmed in writing)
+- **Phase 4:** Microsoft Graph MSSP permission model under Gravity's GDAP/CSP relationship
 
 ## Session Continuity
 
-- **Last session:** 2026-05-01 — research completed and committed (`9181f9c docs: complete project research`)
-- **This session:** 2026-05-02 — milestone v1.0 started; architecture revised (cost-simplified, FortiGate, owned gateway); research re-run; requirements defined
-- **Stopped at:** REQUIREMENTS.md written; roadmap not yet created
+- **Last session:** 2026-05-02 — milestone v1.0 started; architecture revised; requirements defined
+- **This session:** 2026-05-02 — roadmap created (4 phases, 42/42 coverage)
+- **Stopped at:** ROADMAP.md committed; Phase 1 not yet planned
 - **Resume file:** none
+- **Resume command:** `/gsd-plan-phase 1`
 
 ## Artifacts Present
 
 - `.planning/PROJECT.md` ✓
-- `.planning/research/SUMMARY.md` ✓ (plus STACK / FEATURES / ARCHITECTURE / PITFALLS)
-- `.planning/ROADMAP.md` ✗ — not yet created
-- `.planning/phases/` ✗ — not yet created
+- `.planning/REQUIREMENTS.md` ✓ (with traceability table populated)
+- `.planning/research/SUMMARY.md` ✓
+- `.planning/ROADMAP.md` ✓ — created this session
+- `.planning/phases/` ✗ — created at first `/gsd-plan-phase`
