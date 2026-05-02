@@ -1,802 +1,690 @@
-# Architecture Research
+# Architecture Research (Revised — Cost-Simplified, FortiGate Hub-and-Spoke)
 
 **Domain:** MSP operations data platform with strong AI-safety boundary (Azure SQL two-zone, agent-consumed)
-**Researched:** 2026-05-01
-**Confidence:** HIGH on the load-bearing structural decisions; MEDIUM on AI gateway product selection (build-vs-buy is genuinely open)
+**Researched:** 2026-05-01 (revised from initial design)
+**Confidence:** HIGH on structural decisions; MEDIUM on FortiGate sizing (depends on real throughput) and gateway LOC estimate
+**Budget target:** under $200/mo total Azure spend including FortiGate BYOL VM compute
 
 ---
 
-## Standard Architecture
+## Why This Revision
 
-### System Overview
+The initial architecture was over-engineered for Gravity's actual scale (2–5 employees, ~50 customers, internal tool). This revision keeps **all five layers of defense intact** while collapsing components, identities, and Azure SKUs to fit a small-MSP budget. The substantive changes:
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          SOURCE TOOLS (External)                             │
-│   ConnectWise │ Pax8 │ MS Graph │ RMM │ SentinelOne │ Backup │ Docs │ ...   │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │ HTTPS (egress allowlist + per-tool secret)
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                  SYNC PLANE  (Azure Container Apps Jobs / VNet)              │
-│  ┌─────────────┐ ┌──────────┐ ┌──────────────┐ ┌────────────────────────┐   │
-│  │ Scheduler   │→│ Adapter  │→│ Staging Loader│→│ DLQ + Retry Manager    │   │
-│  │ (cron jobs) │ │ (per src)│ │ (BULK INSERT) │ │ (Service Bus + alerts) │   │
-│  └─────────────┘ └──────────┘ └──────────────┘ └────────────────────────┘   │
-│              ETL Managed Identity (zero grants on ai_zone)                   │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │ Private Endpoint
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                       AZURE SQL DATABASE (single instance)                   │
-│  ┌────────────────────────────┐  ┌────────────────────────────────────────┐ │
-│  │   RAW ZONE (per-tool)      │  │           AI ZONE                      │ │
-│  │   raw_cw.*                 │  │           ai_zone.*                    │ │
-│  │   raw_pax8.*               │  │   customer_snapshot                    │ │
-│  │   raw_graph.*              │  │   customer_features_*                  │ │
-│  │   raw_rmm.*                │  │   timeseries_aggregate                 │ │
-│  │   ...                      │  │   customer_memory                      │ │
-│  │                            │  │   (indexed views OR refreshed tables)  │ │
-│  │   Always Encrypted on      │  │                                        │ │
-│  │   RESTRICTED columns       │  │   No RESTRICTED. SENSITIVE only via    │ │
-│  │                            │  │   pseudonym (person_pid). Field-class  │ │
-│  │   Agent identity: 0 grants │  │   composition documented per view.     │ │
-│  └────────────────────────────┘  └────────────────────────────────────────┘ │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │   PSEUDONYM PLANE (etl-only schema)  pseudo.person_map, pseudo.audit    ││
-│  │   Salt service writes here. Agent identity: 0 grants. ETL: write.       ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │ Private Endpoint
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│         TYPED TOOL FUNCTION LAYER  (Azure Container Apps, internal)          │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  HTTP API: get_customer_snapshot(cw_company_id) → DTO                  │ │
-│  │           list_renewals_due(window_days, tenant_id) → DTO[]            │ │
-│  │           emit_action({action, company, recipient_role, template, …})  │ │
-│  │  Identity: tool-runtime managed identity (read-only on ai_zone.*)      │ │
-│  │  All queries use Data API Builder semantics (RLS + session context)    │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │ HTTPS (internal VNet)
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│              AI GATEWAY  (Azure Container Apps, internal)                    │
-│  ┌─────────┐ ┌────────┐ ┌──────────┐ ┌───────────┐ ┌──────────────────────┐ │
-│  │ Input   │→│ Token  │→│ Anthropic│→│ Output    │→│ Audit Writer         │ │
-│  │ scrub   │ │ budget │ │ (BAA,    │ │ filter +  │ │ (chained SHA-256,    │ │
-│  │ + canary│ │ + cap  │ │  zero-   │ │ canary    │ │  Service Bus → WORM) │ │
-│  │ check   │ │ enforce│ │  retain) │ │ check     │ │                      │ │
-│  └─────────┘ └────────┘ └──────────┘ └───────────┘ └──────────────────────┘ │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │
-                                  ▼
-                       AGENT RUNTIME (downstream — not Barycenter)
-                       Network egress allowlist: gateway, SQL, storage only
+| Original | Revised | Reason |
+|----------|---------|--------|
+| Private Endpoints + NSG-only egress | **FortiGate NVA in hub VNet, all traffic UDR'd through it** | Single perimeter device gives IDS/IPS, outbound allowlisting, and inter-subnet inspection — replaces several Azure-native controls with one license already familiar to MSP staff |
+| Always Encrypted + Secure Enclaves on RESTRICTED columns | **TDE + schema permissions + AE deterministic where joins required** | Enclave-capable SKUs (DC-series) are expensive and add operational burden. TDE + schema-grant isolation is the load-bearing control; AE is supplemental |
+| Azure API Management fronting Anthropic | **Owned FastAPI gateway (~200–400 LOC)** | APIM at ~$0.07/hr = $50/mo minimum and policy XML is the wrong shape for cryptographic audit + canary detection |
+| Microsoft Sentinel as primary SIEM | **Log Analytics workspace (90-day hot) + WORM blob (6-yr retention)** | Sentinel is ~$2/GB ingestion plus per-node fees; LAW alone is ~$2.30/GB and gives query without the SIEM premium |
+| 6 managed identities | **3–4 managed identities** | Smaller blast-radius surface to reason about; identities consolidated by trust class, not by component |
+| Drata/Vanta connector | **Out — manual evidence collection in `compliance/` until SOC 2 pursuit begins** | $5–15k/yr is dead weight pre-SOC-2 |
+| Salt service as separate Container App | **Salt fetch inside ETL worker (Key Vault reference, never cached)** | At 50 customers + bulk syncs, the network hop and dedicated identity buy little; Key Vault access policy + audit is the chokepoint |
+| Container Apps always-on | **Container Apps Consumption plan, scale-to-zero** | Idle services cost $0; cold-start latency irrelevant for ETL and acceptable for gateway |
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│              AUDIT & EVIDENCE PLANE (cross-cuts everything)                  │
-│  Service Bus (audit topic) ──► WORM Storage (immutable, retention-locked)    │
-│                            └─► Microsoft Sentinel (alerts, queries)          │
-│                            └─► Drata/Vanta connector (read-only evidence)    │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│              IDENTITY & KEY PLANE (cross-cuts everything)                    │
-│   Entra ID  ─►  Managed Identities: etl, salt, tool, gateway, admin (PIM)    │
-│                                                                              │
-│   Key Vault: salt-vault (per-tenant HMAC salts; salt-service identity only)  │
-│              cmk-vault  (Always-Encrypted CMK; admin identity rotates)       │
-│              api-vault  (per-tool API secrets; etl identity reads)           │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Recommended Implementation |
-|-----------|----------------|----------------------------|
-| **Adapter (per source tool)** | Pull from source API, normalize to staging row shape, hand off to loader. One per tool. | Python container, shared base class with hooks (`fetch_page`, `to_staging_row`, `delta_cursor`). Deployed as Azure Container Apps **Job**. |
-| **Scheduler** | Cron-style invocation of adapter jobs (e.g., CW every 30 min, Graph every 60 min). | Container Apps Jobs scheduled triggers, or Service Bus timer messages → manual invocation. |
-| **Staging Loader** | BULK INSERT raw payload from adapter into `raw_<tool>.staging_*` tables, then MERGE into versioned raw tables. | T-SQL stored procs invoked from adapter; per-tool. |
-| **DLQ + Retry Manager** | Failed pulls re-queued with exponential backoff; permanent failures dead-lettered with diagnostic context; alerts to Sentinel. | Azure Service Bus DLQ + a dead-letter handler Function that writes to audit + ops alert channel. |
-| **Salt Service** | Single source of truth for per-tenant HMAC salts. Issues `person_pid` for an `(email, tenant_id)` pair on demand. **No other component reads salts.** | Small .NET or Python container; one managed identity (`salt-runtime`); **only** identity with `get` on `salt-vault`. Stateless; deterministic outputs. |
-| **Pseudonymizer (in ETL)** | For each row landing in `raw_*` that contains an email, calls Salt Service to materialize `person_pid` and writes to `pseudo.person_map`. Email itself stays in raw zone (Always Encrypted). | T-SQL CLR procedure or Python ETL step calling Salt Service over internal HTTPS. |
-| **AI-Zone Builder** | Periodic job that refreshes `ai_zone.*` indexed views or rebuilds materialized tables from raw + pseudo. | T-SQL stored procs invoked by Container Apps Job on a schedule (every 15 min for hot views, hourly for snapshots). |
-| **Typed Tool Function Layer** | The agent's only contract. HTTP service exposing typed functions; never raw SQL. | **Azure Data API Builder** sitting on `ai_zone.*` views with session-context RLS, fronted by FastAPI (Python) or .NET minimal API for action-emission endpoints that DAB doesn't cover. |
-| **Action Dispatcher** | Receives structured agent actions (`{action, company, recipient_role, template, fields}`), resolves recipient email from raw zone, sends. | .NET or Python Container App. Sole component (other than ETL) with read access to raw zone email columns. Logs every dispatch to audit. |
-| **AI Gateway** | Input scrub → token-budget enforce → call Anthropic → output filter (canary, PII patterns, identifier regex) → audit write. | **Build a thin .NET or Python Container App** rather than adopt LiteLLM/Portkey. See decision below. |
-| **Audit Writer** | Receives audit events from every other component over Service Bus topic. Computes SHA-256 chain, writes to WORM storage and Sentinel. | Azure Function with Service Bus trigger; only identity with append access to audit container; immutable container policy locked. |
-| **Compliance Connector** | Read-only consumer for Drata/Vanta evidence collection. | Drata/Vanta's existing Azure connector — managed identity with `Reader` on subscription + `Sentinel Reader`. **No write paths.** |
+The five layers (schema permissions → AI-safe views → typed functions → gateway scrubbing → per-prompt audit) **all still hold** — they are mapped explicitly in the [Defense-Layer Map](#defense-layer-map) section.
 
 ---
 
-## Recommended Project Structure
+## 1. Hub-and-Spoke VNet Topology
 
-This is a **multi-component repo** (not a single app). Each top-level directory is a deployable unit.
+### Topology
 
 ```
-barycenter/
-├── infra/                              # Terraform / Bicep
-│   ├── network/                        # VNet, subnets, private endpoints, NSGs
-│   ├── sql/                            # Azure SQL server, database, AE keys
-│   ├── identity/                       # Managed identities, role assignments, PIM rules
-│   ├── keyvault/                       # salt-vault, cmk-vault, api-vault (separate vaults)
-│   ├── storage/                        # WORM container with immutability policy
-│   ├── servicebus/                     # audit topic, etl-dlq queue
-│   └── containerapps/                  # apps + jobs definitions
-│
-├── sql/                                # Source-of-truth schema (idempotent migrations)
-│   ├── 00-schemas/                     # CREATE SCHEMA raw_cw, raw_pax8, ai_zone, pseudo
-│   ├── 10-raw/                         # Per-tool raw tables (raw_cw/, raw_pax8/...)
-│   │   └── raw_cw/
-│   │       ├── companies.sql           # Each table file declares field-class tags in comments
-│   │       └── tickets.sql
-│   ├── 20-pseudo/                      # pseudo.person_map, pseudo.audit
-│   ├── 30-ai-zone/                     # ai_zone views and indexed views
-│   ├── 40-grants/                      # Schema-level GRANT/DENY per identity
-│   ├── 50-rls-policies/                # Security policies, predicates
-│   └── 99-leak-test-fixtures/          # Synthetic markers for VER-01
-│
-├── adapters/                           # One subfolder per source tool
-│   ├── _base/                          # Shared adapter framework (Python)
-│   │   ├── adapter.py                  # AdapterBase with hooks
-│   │   ├── retry.py                    # Exponential backoff, circuit breaker
-│   │   ├── pagination.py               # RFC 5988 link-header pagination
-│   │   └── delta.py                    # Cursor checkpointing
-│   ├── connectwise/
-│   │   ├── adapter.py
-│   │   ├── field_map.yaml              # Source field → raw column → field class
-│   │   └── etl_recipe.yaml             # Composition of 8 transformation primitives
-│   ├── pax8/
-│   ├── graph/
-│   └── ...
-│
-├── etl/                                # T-SQL ETL recipes (raw → ai_zone)
-│   ├── primitives/                     # The 8 transformation primitives as reusable procs
-│   │   ├── drop.sql
-│   │   ├── hash.sql
-│   │   ├── pseudonymize.sql
-│   │   ├── aggregate.sql
-│   │   ├── bucket.sql
-│   │   ├── score.sql
-│   │   ├── keyword_flags.sql
-│   │   └── as_is.sql
-│   ├── builders/                       # Per-shape builders
-│   │   ├── customer_snapshot.sql
-│   │   ├── customer_features_<aspect>.sql
-│   │   └── timeseries_aggregate.sql
-│   └── orchestrator/                   # Job that calls builders on schedule
-│
-├── services/
-│   ├── salt-service/                   # The pseudonymization HMAC service
-│   ├── tool-functions/                 # Typed function HTTP API (DAB + custom endpoints)
-│   ├── action-dispatcher/              # Resolves agent actions to outbound communications
-│   ├── ai-gateway/                     # LLM gateway (scrub, budget, filter, audit)
-│   └── audit-writer/                   # Service Bus → WORM + Sentinel
-│
-├── compliance/                         # Evidence and policy artifacts
-│   ├── field-class-registry.yaml       # ALL columns × class. CI source of truth.
-│   ├── ai-zone-view-manifest.yaml      # ALL views × field-class composition. CI checks.
-│   ├── policies/                       # Written policies (IR, change mgmt, access review)
-│   ├── runbooks/                       # Breach notification, key rotation, mass erasure
-│   └── adversarial-corpus/             # Prompt-injection test cases (COMP-05)
-│
-├── tests/
-│   ├── leak-test/                      # VER-01: end-to-end with synthetic markers
-│   ├── field-class-drift/              # VER-02: schema vs registry diff
-│   ├── adapter-contract/               # Each adapter's field_map.yaml validates
-│   └── gateway/                        # Canary detection, output-filter regression
-│
-└── docs/
-    ├── tool-onboarding-spec-template.md   # TOOL-01
-    ├── identifier-hierarchy.md
-    ├── threat-model.md
-    └── decisions/                          # ADRs
+                          Internet
+                              │
+                              ▼
+            ┌──────────────────────────────────┐
+            │   HUB VNet  (10.10.0.0/22)       │
+            │                                  │
+            │   ┌──────────────────────────┐   │
+            │   │ FortiGate NVA            │   │
+            │   │ (BYOL, single VM-Series) │   │
+            │   │   trust-nic: 10.10.1.4   │   │
+            │   │   untrust-nic: 10.10.0.4 │   │
+            │   │   mgmt-nic:  10.10.2.4   │   │
+            │   └──────────────────────────┘   │
+            │   AzureFirewallSubnet-equiv:     │
+            │     untrust  10.10.0.0/27        │
+            │     trust    10.10.1.0/27        │
+            │     mgmt     10.10.2.0/27        │
+            └────────────────┬─────────────────┘
+                             │ VNet Peering (use-remote-gateways=false,
+                             │  allow-forwarded-traffic=true)
+                             ▼
+            ┌──────────────────────────────────┐
+            │  SPOKE VNet (10.20.0.0/22)       │
+            │  Barycenter                      │
+            │                                  │
+            │   etl-subnet     10.20.0.0/26    │  Container Apps env A (ETL jobs)
+            │   services-sub   10.20.0.64/26   │  Container Apps env B (gateway, dispatcher)
+            │   data-subnet    10.20.0.128/27  │  Azure SQL Private Endpoint NIC
+            │   pe-subnet      10.20.0.160/27  │  Other Private Endpoints (KV, Storage, SB)
+            │   admin-subnet   10.20.1.0/27    │  PIM JIT bastion / break-glass jump
+            │                                  │
+            │  All subnets carry UDR forcing   │
+            │  0.0.0.0/0 → 10.10.1.4           │
+            │  (FortiGate trust NIC)           │
+            └──────────────────────────────────┘
 ```
 
-### Structure Rationale
+### Subnets (Spoke)
 
-- **`infra/` separated by domain**, not by environment. One folder per concern (network, sql, identity) so a security review can audit each axis without spelunking.
-- **`sql/` is a numbered idempotent migration tree.** Field-class tags live as structured comments in `10-raw/` table definitions, parsed by CI for the field-class registry. The leak-test fixtures are version-controlled because the VER-01 test must be auditable.
-- **`adapters/_base/` is the framework**, individual adapter folders are configuration + hooks. New tool onboarding = create a folder, fill `field_map.yaml` and `etl_recipe.yaml`, implement the API-specific `fetch_page`. No bespoke architecture per tool.
-- **`services/` are deployable units**, each its own container, identity, and trust boundary. Boundaries match identities — when reviewing "what can the salt service do?", everything is in one folder.
-- **`compliance/` is in-repo**, not in a wiki. Field-class registry, view manifest, runbooks all version-controlled because they are tested by CI (VER-02).
-- **Tests are organized by guarantee, not by component.** The leak test cuts across every layer; putting it in `services/ai-gateway/tests/` would be wrong.
+| Subnet | CIDR | What runs here | Why isolated |
+|--------|------|----------------|--------------|
+| `etl-subnet` | 10.20.0.0/26 (64 IPs) | Container Apps environment A: adapter Jobs, AI-zone builder Job, pseudonymizer | ETL identity has CRUD on raw_*; isolation prevents lateral movement to gateway |
+| `services-subnet` | 10.20.0.64/26 (64 IPs) | Container Apps environment B: AI gateway, action dispatcher, typed-function service | Platform identity here can reach Anthropic; ETL must not |
+| `data-subnet` | 10.20.0.128/27 (32 IPs) | Azure SQL Private Endpoint NIC | Smallest possible blast radius; only PE traffic |
+| `pe-subnet` | 10.20.0.160/27 (32 IPs) | Private Endpoints for Key Vault, Storage (WORM), Service Bus | Same isolation rationale |
+| `admin-subnet` | 10.20.1.0/27 (32 IPs) | Azure Bastion (Developer SKU) for PIM JIT human access | Human break-glass path stays separate from any service path |
+
+Container Apps requires a **delegated subnet** (the env's "infrastructure subnet"); each Container Apps environment burns one /23 minimum on Workload Profiles or a /27 on Consumption-only. **Use Consumption-only** for both environments to fit /26 each. (Workload Profiles dedicated plan is ~$70/mo per environment — too expensive.)
+
+### FortiGate Routing & UDRs
+
+**Hub side:**
+- FortiGate has three NICs: `untrust` (Internet-facing public IP), `trust` (toward spokes), `mgmt` (RDP/HTTPS to admin only).
+- A `RouteTable-Hub-to-Spoke` is associated with the `trust` subnet pushing 10.20.0.0/22 → next-hop = (no override; in-VNet routing handles peered destinations).
+- IP forwarding **must be enabled** on the FortiGate trust NIC (Azure NIC property + FortiOS config).
+
+**Spoke side — UDR `RouteTable-Spoke-Forced-Tunnel` attached to every subnet except `data-subnet` and `pe-subnet`:**
+
+| Address Prefix | Next Hop Type | Next Hop Address | Purpose |
+|----------------|---------------|------------------|---------|
+| `0.0.0.0/0` | Virtual Appliance | 10.10.1.4 | Force ALL outbound through FortiGate |
+| `10.20.0.0/22` | VNet | — | Keep intra-spoke local (no FW hairpin needed for SQL PE traffic if same VNet) |
+| `10.10.0.0/22` | VNet Peering | — | Hub-direct (FortiGate management) |
+
+**Important nuance for `data-subnet` and `pe-subnet`:** Private Endpoint NICs do **not** honor UDRs by default for PE-targeted traffic, and forcing PE traffic through an NVA breaks DNS/cert validation in some configurations. Best practice: **leave PE subnets without 0/0 UDR**; their only inbound is from the spoke services anyway, which already came through the FortiGate. Outbound from PEs is irrelevant.
+
+For PE-from-FortiGate inspection: enable **"Network Policies for Private Endpoints"** at the subnet level if you want NSG enforcement on PE traffic; do **not** UDR PE traffic out to the FortiGate (recursion risk).
+
+**Inter-subnet traffic between `etl-subnet` and `services-subnet`:** Currently routes locally (same VNet). To force it through FortiGate for inspection, add a UDR: `10.20.0.64/26 → 10.10.1.4` on etl-subnet, and the symmetric reverse. This is the **subnet isolation** layer — it makes "ETL identity reaches gateway" a FortiGate-visible event. **Recommended: enable.** Cost is one extra hop (~1ms); benefit is full inter-subnet visibility.
+
+### FortiGate Policies (illustrative)
+
+| # | Src | Dst | Service | Action | Note |
+|---|-----|-----|---------|--------|------|
+| 1 | etl-subnet | api.connectwisedev.com, api.pax8.com, graph.microsoft.com (FQDN objects) | HTTPS | ALLOW + IPS | Source-tool egress allowlist |
+| 2 | services-subnet | api.anthropic.com | HTTPS | ALLOW + IPS | LLM egress (only services subnet) |
+| 3 | etl-subnet | api.anthropic.com | any | DENY + LOG | ETL must never reach LLM |
+| 4 | services-subnet | source-tool FQDNs | any | DENY + LOG | Gateway must never reach source tools directly |
+| 5 | any | Internet (catch-all) | any | DENY + LOG | Default deny |
+| 6 | etl-subnet | services-subnet | HTTPS | ALLOW (only specific inter-service paths) | Granular inter-subnet |
+| 7 | admin-subnet | any | restricted set | ALLOW + LOG | Break-glass |
+
+### Cost — VNet/FortiGate
+
+| Item | SKU | $/mo |
+|------|-----|------|
+| FortiGate VM | Standard_F2s_v2 (2 vCPU, 4 GB) BYOL | ~$60 (Linux compute pricing; license already owned) |
+| FortiGate public IP | Standard, static | ~$4 |
+| VNet peering | hub↔spoke, 1 GB/mo egress | ~$1 |
+| Bastion Developer | per-session | ~$0–7 (free tier covers light use) |
+| **Subtotal** | | **~$65–72/mo** |
+
+If F2s_v2 throughput becomes the bottleneck, F4s_v2 is ~$120/mo — still inside budget with other savings.
 
 ---
 
-## Architectural Patterns
+## 2. Azure SQL Placement & Cost
 
-### Pattern 1: Schema-per-Tool in the Raw Zone (Recommended)
+### Recommended: Private Endpoint in `data-subnet`
 
-**What:** Each source tool gets its own SQL schema (`raw_cw`, `raw_pax8`, `raw_graph`, `raw_rmm_ninja`, …). Each schema owns the staging tables, raw versioned tables, source-fidelity ETL metadata, and the per-tool retention policy.
+**Why Private Endpoint over VNet service endpoint:**
+- VNet service endpoints route to the public SQL endpoint over Microsoft backbone — DNS still resolves to a public IP, SQL firewall rules allow the VNet, but the data path is "Microsoft network" not "your VNet." NIST/HIPAA auditors increasingly want **truly private** data paths.
+- Private Endpoint puts a NIC in your VNet with a private IP; SQL becomes addressable only via that IP. Public network access can be **disabled entirely** on the SQL server (`publicNetworkAccess = Disabled`).
+- **HIPAA technically does not mandate Private Endpoint** — the Security Rule is technology-neutral. But the global instruction in CLAUDE.md is explicit: *"Azure SQL: disable public network access; use private endpoint or VNet rule."* Private Endpoint is the cleaner answer because it survives the "is it really not on the internet?" question without further argument.
 
-**When to use:** Multi-source ingest where tools evolve independently and field-class tagging needs per-tool review.
+### Cost — Azure SQL
 
-**Trade-offs:**
-- **Pro: Grants are per-schema.** Revoking ETL access to one tool doesn't touch the others.
-- **Pro: Schema drift is local.** Pax8 adding a column doesn't ripple into a shared `raw.subscriptions` table.
-- **Pro: Field-class review boundary matches the onboarding boundary.** A new tool's PR touches one schema; reviewers know exactly what surface area is in scope.
-- **Pro: Per-tool retention is straightforward.** `raw_cw.tickets` keeps 13 months; `raw_graph.audit_signins` might keep 90 days.
-- **Con: More schemas to manage** — but schemas are cheap; the alternative (shared raw with a `source_tool` column) is the anti-pattern (see below).
+| SKU | vCore | Storage | $/mo (approximate) | Notes |
+|-----|-------|---------|---------|-------|
+| **General Purpose Serverless, 1 vCore, auto-pause 1hr** | 0.5–1 (auto) | 32 GB | **~$15–35** | **Recommended.** Auto-pauses overnight, scales to 1 vCore on demand. Adequate for ~50 customers, light query load |
+| GP Provisioned, 1 vCore | 1 | 32 GB | ~$185 | No auto-pause; same compute always-on |
+| Hyperscale, 1 vCore | 1 | first 100 GB free | ~$220 | Overkill |
+| **Always Encrypted with Secure Enclaves (DC-series)** | 2 | — | ~$370+ | **Rejected.** Cost not justified pre-SOC-2 |
 
-**Implementation note:** Within each tool schema, a consistent sub-pattern:
-- `raw_cw.staging_companies` — landing zone, truncated each pull, no constraints.
-- `raw_cw.companies` — append-only versioned table with `_synced_at`, `_source_payload_hash`, `_etl_run_id`. MERGE'd from staging by ETL.
-- `raw_cw.companies_current` — view returning latest version per natural key.
+**Private Endpoint cost:** ~$7.30/mo per PE + small data processing fee. One PE for SQL.
 
-**Schema drift handling:** Adapter validates source response against `field_map.yaml`. New fields: warn (added to staging as `_unmapped_extras` JSON column), require explicit field-class tagging PR before propagating. Removed fields: warn, then keep column but mark `deprecated_at`.
+**Encryption posture:**
+- TDE: on by default, free.
+- Always Encrypted (deterministic) on the `email_encrypted` column in raw zone — required so ETL can decrypt for pseudonymization but DBAs cannot. Free; no enclave required for deterministic AE on equality-only.
+- AE on other RESTRICTED columns: optional; schema permissions are the load-bearing control.
+- Schema grants are how RESTRICTED data is gated: `etl-identity` has CRUD on `raw_*`, `platform-identity` has **zero** grant on `raw_*`. This is the architectural moat.
 
-### Pattern 2: ELT Inside Azure SQL (Not Outside It)
-
-**What:** The transformation primitives (drop/hash/pseudonymize/aggregate/bucket/score/keyword_flags/as_is) live as T-SQL stored procedures. Adapters do *only* extract + load. All transformation runs server-side.
-
-**When to use:** When the security boundary is the database itself. When pulling data out for transformation would require re-establishing the security perimeter externally.
-
-**Trade-offs:**
-- **Pro: PII never leaves the SQL trust boundary** during transformation. The pseudonymization step, which is the most sensitive operation, runs inside the same VNet/identity boundary as the data.
-- **Pro: Field-class tags can be enforced in the same place they're declared** (column metadata, extended properties, or a registry table joined at ETL time).
-- **Pro: Refresh of indexed views is automatic** when raw tables change — T-SQL can use `CREATE INDEX ... WITH SCHEMABINDING` for zero-staleness ai_zone views where math allows.
-- **Con: T-SQL is less expressive than Python** for complex transforms. Mitigation: keyword_flags and score primitives can call out to a Python service if needed (rare); 90% of transforms are pure SQL.
-- **Con: DTU pressure during ETL.** Mitigation: production sizing baseline (OPS-01) accounts for this; ETL runs scheduled, not concurrent with peak agent traffic.
-
-### Pattern 3: Salt Service as Crown-Jewel Microservice
-
-**What:** Pseudonymization is **not** a SQL function and **not** an inline ETL step that reads salts. It is a separate HTTP service with its own managed identity (`salt-runtime`), its own Key Vault (`salt-vault`), and exclusive access to the salt material.
-
-**When to use:** When the cryptographic key for pseudonymization is itself the trust boundary. If anyone with database access can read salts, the pseudonyms collapse.
-
-**Trade-offs:**
-- **Pro: Salt access is a single-component blast radius.** Compromise of the ETL identity, the agent identity, the admin identity — none expose salts.
-- **Pro: One-way property is enforceable.** Agent identity and Tool Function Layer have **zero** network reachability to the salt service (NSG denies). They can only see materialized pseudonyms.
-- **Pro: Erasure is mechanically clean.** ERAS-01 = "delete the salt for tenant X, all downstream pseudonyms become non-reversible by anyone." A column in `pseudo.person_map` per-tenant indicates erased state; the salt service refuses to issue new pids for erased tenants.
-- **Pro: Audit choke point.** Every pseudonym issuance is logged through the salt service.
-- **Con: Adds a network hop to ETL.** Mitigation: pseudonymization is bulk and infrequent; not on hot path for agent queries.
-
-**Concrete contract:**
-```
-POST /pid    { tenant_id, email_lower } → { person_pid }   # idempotent
-POST /erase  { tenant_id }              → { erased_at }    # privileged
-GET  /audit  …                                              # privileged
-```
-
-The salt service is **stateless except for Key Vault**. The map of `(tenant, email) → pid` lives in `pseudo.person_map`, written by ETL, **not** by the salt service. The salt service computes; ETL persists.
-
-### Pattern 4: Indexed Views for Hot AI-Zone Shapes, Refreshed Tables for Cold
-
-**What:** `ai_zone.*` is a mix of two physical realizations:
-- **Indexed views (`SCHEMABINDING + UNIQUE CLUSTERED INDEX`)** for shapes that map directly to raw rows with simple aggregates: e.g., `ai_zone.customer_snapshot` if it's a join + light aggregation. Updates are automatic; query performance is fast.
-- **Refreshed tables (built by stored procs on schedule)** for shapes that require cross-tool joins, time-windowed aggregates, scoring, or `customer_memory` (which is by definition a derived narrative): e.g., `ai_zone.customer_features_renewal_risk`, `ai_zone.timeseries_aggregate`.
-
-**When to use:** Indexed views when the shape is a deterministic function of raw rows that can be expressed in a single SELECT and the underlying tables aren't too churn-heavy. Refreshed tables for everything else.
-
-**Trade-offs:**
-- **Pro: Best of both.** Hot, simple shapes are zero-stale and fast. Heavy shapes don't pay write-amplification on every raw insert.
-- **Pro: The four-shape constraint (`customer_snapshot`, `customer_features_*`, `timeseries_aggregate`, `customer_memory`) is enforceable in the manifest.** New tools contribute *into* these; the manifest CI fails any view that doesn't fit one of the four.
-- **Con: Indexed views have constraints** (no outer joins, no UNION, etc.). Some shapes will have to be refreshed tables even if they "feel hot."
-- **Con: Refresh cadence is a choice.** Recommendation: 15-min cadence for `customer_snapshot` and `customer_features_*`; hourly for `timeseries_aggregate`; on-event for `customer_memory` (when an agent action emits a memory write).
-
-**Refresh strategy:** Single orchestrator stored proc per shape, idempotent, with a `_refresh_log` row capturing run_id, start, end, rows touched, hash of result. CI runs the refresh in tests against synthetic data.
-
-### Pattern 5: Data API Builder + Custom API for Typed Tool Functions
-
-**What:** The typed tool function layer is **two services in one VNet**:
-1. **Data API Builder (DAB)** for read-only typed function endpoints over `ai_zone.*` views. DAB exposes REST/GraphQL with declarative entity config; session context propagates the calling agent's claims so RLS policies in SQL filter rows by tenant/customer.
-2. **A small custom HTTP service** (FastAPI or .NET minimal API) for endpoints DAB can't model: `emit_action()` (writes to action queue, not SQL), `get_customer_memory()` (which may want to merge structured + free-form), and any function that orchestrates multiple SQL calls behind one DTO.
-
-**When to use:** When agents need a typed, validated, RLS-enforced contract and SQL can express most of it but not all of it.
-
-**Trade-offs:**
-- **Pro: DAB does the boring 80%** (CRUD-shaped reads with row-level filtering) for free, with battle-tested session-context RLS and OpenAPI spec generation.
-- **Pro: Custom service handles the irreducible 20%** without forcing every interaction through DAB's model.
-- **Pro: Both run in the same VNet, both authenticate the agent identity once.**
-- **Con: Two codebases.** Mitigation: they share a typed schema (Pydantic / C# records generated from `ai-zone-view-manifest.yaml`).
-- **Anti-temptation:** Do **not** expose DAB's mutation operations to agents. Reads only. Mutations (action emission) go through the custom service which validates the structured action shape before any side-effect.
-
-### Pattern 6: AI Gateway as Thin Owned Service (Not Off-the-Shelf)
-
-**What:** Build a small (~1-2k LOC) gateway in .NET or Python rather than adopting LiteLLM, Portkey, Bifrost, or fronting Anthropic with Azure API Management.
-
-**When to use:** When the gateway's job description includes (a) HIPAA-grade audit logging with a specific chain format, (b) canary detection against tokens that are domain-specific to your raw zone, (c) per-tenant per-class opt-out enforcement (ACCESS-05), and (d) per-tenant per-day budgets that map to your tenant identity hierarchy.
-
-**Trade-offs:**
-- **Pro: Audit format is exactly what your WORM chain expects.** No translation layer between the gateway's "this is what I logged" and your audit_writer's "this is what I sign."
-- **Pro: Canary detection logic is domain-specific** (real customer names, real serial numbers, real PO numbers as canaries) and is closer to a config file than a product feature. Off-the-shelf gateways are generic.
-- **Pro: Per-tenant per-class opt-out is a 50-line policy check** that's natural to write inline; off-the-shelf gateways generally lack this granularity.
-- **Pro: BAA is between Gravity and Anthropic directly** — you don't introduce a third vendor between you and the LLM.
-- **Pro: ~2k LOC is small enough to security-review fully** and to evolve as the threat model evolves.
-- **Con: You write and maintain it.** Mitigation: it's not a hot-path performance problem (LLM latency dwarfs gateway overhead); it's a correctness problem, and correctness is exactly what you want to own.
-- **Con: You miss model routing / multi-provider features** of LiteLLM. But Constraint says Anthropic is the LLM. If that changes, revisit.
-
-**Verdict:** **Build it.** This is a load-bearing security component; it's small; off-the-shelf is generic where you need specific.
-
-If you want the *option* of pluggable model providers later, structure the gateway with a clean `LLMProvider` interface internally. That's a 2-day investment, not a product adoption.
-
-### Pattern 7: Audit Plane on Service Bus → WORM + Sentinel
-
-**What:** Every component writes audit events to a single Service Bus topic. A dedicated audit-writer Function consumes the topic, computes the SHA-256 chain (each event includes the SHA of the prior), appends to an immutable WORM blob (one append-blob per day), and forwards to Sentinel for query/alerting.
-
-**When to use:** When you need both immutability (regulatory) and queryability (operations).
-
-**Trade-offs:**
-- **Pro: Single chokepoint** for the cryptographic chain — only one writer, only one identity with append rights to the WORM container.
-- **Pro: Components don't talk to WORM directly.** They publish to Service Bus and forget. Failure of WORM doesn't block the producing component (only delays audit landing).
-- **Pro: Sentinel forwarding is independent.** Tampering with WORM is detectable (chain breaks); tampering with Sentinel doesn't help if the chain is intact. Tampering with both is detectable because they're written from the same canonical source.
-- **Pro: Audit-of-audit (AUDIT-02)** is natural — queries against audit data are themselves Service Bus events from the query layer.
-- **Con: Service Bus adds latency** between event and durable storage. Mitigation: WORM is for forensic completeness, not real-time alerting; Sentinel handles real-time. ~seconds latency to WORM is acceptable.
-- **Con: Append-blob immutability has a per-blob retention period** locked at write. Daily rotation matches HIPAA retention math (6 years × 366 days = 2196 blobs).
-
-### Pattern 8: Container Apps Jobs for Sync, Container Apps for Services
-
-**What:**
-- **Sync layer = Azure Container Apps Jobs** (scheduled or manual triggers, run-to-completion semantics).
-- **Always-on services (salt service, tool functions, AI gateway, action dispatcher) = Azure Container Apps** (HTTP-triggered, scale-to-zero where workload allows, scale-out on demand).
-- **Audit writer = Azure Function** (Service Bus trigger, simple consumer pattern).
-
-**When to use:** When sync workloads are bounded, batch-shaped, and benefit from container portability (some adapters will use vendor SDKs that aren't Functions-friendly), and when service workloads are HTTP and want serverless-ish economics.
-
-**Trade-offs:**
-- **Pro: Container Apps Jobs are the right shape for ETL.** They run, they finish, they don't pretend to be Functions. They support cron, manual, event triggers.
-- **Pro: Same VNet, same identity model, same observability** as the services. One platform.
-- **Pro: Functions are still cheap** for the audit-writer's Service Bus trigger pattern.
-- **Con: Container Apps cost more than Functions at trivial scale.** Doesn't matter at this volume.
+### Subtotal (data tier): ~$23–43/mo (SQL + PE)
 
 ---
 
-## Data Flow
+## 3. Simplified Identity Plane (3–4 Managed Identities)
 
-### Flow 1: Sync (Source → Raw Zone)
+### Proposed Identities
 
-```
-[Adapter triggered]
-    │
-    ▼
-[Adapter reads delta cursor from raw_<tool>._sync_state]
-    │
-    ▼
-[Adapter calls source API, paginates RFC 5988 link headers]
-    │
-    ▼
-[Adapter normalizes rows per field_map.yaml, validates field-class tags exist]
-    │
-    ▼
-[Adapter writes to raw_<tool>.staging_<entity> via BULK INSERT]
-    │
-    ▼
-[Adapter calls stored proc raw_<tool>.merge_<entity> → raw_<tool>.<entity>]
-    │
-    ▼
-[Adapter advances cursor, writes audit event {tool, entity, rows, run_id, hash}]
-    │
-    ▼
-[On exception: Service Bus DLQ; retry budget; alert Sentinel after exhaustion]
-```
+| Identity | Used by (components) | Reads | Writes | Calls | Key Vault access |
+|----------|---------------------|-------|--------|-------|------------------|
+| **etl-identity** | Adapter Jobs, AI-zone builder Job, pseudonymizer | Source-tool secrets (KV), `raw_*` (R/W), `pseudo.person_map` (R/W) | `raw_*`, `pseudo.person_map`, Service Bus audit topic, audit blob via topic | Source APIs, Salt fetch from KV (ephemeral) | `api-vault` (per-tool secrets, GET), `salt-vault` (per-tenant salts, GET) |
+| **platform-identity** | AI gateway, typed-function service, action dispatcher | `ai_zone.*` (SELECT only), narrow grant on `raw_cw.contacts` for dispatcher only | Service Bus action queue, audit topic | Anthropic API (gateway only), Graph mail / SMTP (dispatcher only) | `api-vault` (Anthropic key, GET) |
+| **audit-identity** | Audit-writer Function | Service Bus audit topic (Receive) | WORM blob (Append-only), Log Analytics ingestion API | — | none (no secrets) |
+| **admin-identity** (PIM JIT) | Human break-glass via Bastion | `raw_*` (full), `pseudo.*`, ai_zone.*, KV management | All (during JIT window) | All | All vaults (during JIT) |
 
-### Flow 2: Pseudonymization (Raw → Pseudo Map)
+Total = **4 identities**. Down from 6 (etl, salt, tool, gateway, dispatcher, audit-writer).
 
-```
-[ETL job triggered for raw_graph.users (or any tool with email)]
-    │
-    ▼
-[ETL selects new (tenant_id, email_encrypted) pairs not yet in pseudo.person_map]
-    │
-    ▼
-[ETL decrypts email column-side via Always Encrypted client]
-    │
-    ▼
-[ETL POSTs (tenant_id, email_lower) → salt-service /pid]
-    │
-    ▼
-[Salt service: HMAC-SHA-256(salt_<tenant>, email_lower) → person_pid]
-[Salt service: writes audit event {tenant_id, salt_version, pid, requested_by_identity}]
-    │
-    ▼
-[ETL writes (tenant_id, email_hash, person_pid, source_tool, first_seen) to pseudo.person_map]
-[ETL does NOT write the cleartext email anywhere outside raw zone]
-    │
-    ▼
-[Cross-tool reconciliation: same (tenant_id, email) → same pid by HMAC determinism]
-[No fuzzy matching, no LLM — deterministic code only (per Out of Scope)]
-```
+### Consolidations Made
 
-### Flow 3: AI-Zone Refresh (Raw + Pseudo → AI Zone)
+- **salt-identity → folded into etl-identity**: salts are fetched directly from `salt-vault` by ETL workers. Justified in §4.
+- **tool, gateway, dispatcher → platform-identity**: all three are the "agent-serving" trust class. None of them touch raw_*  except dispatcher's narrow `raw_cw.contacts` grant. They share an outbound trust profile (can reach Anthropic, can reach SQL via PE, cannot reach source tools).
 
-```
-[Builder job triggered (15 min for snapshot, hourly for timeseries)]
-    │
-    ▼
-[Builder calls etl.builders.<shape> stored proc]
-    │
-    ▼
-[Stored proc reads raw_*.* (joined to pseudo.person_map for emails)]
-[Stored proc applies the 8 primitives:]
-[  RESTRICTED columns: drop OR aggregate]
-[  SENSITIVE columns: hash OR pseudonymize]
-[  INTERNAL/PUBLIC columns: as_is OR bucket OR score]
-    │
-    ▼
-[For indexed views: nothing — they auto-update]
-[For refreshed tables: TRUNCATE + INSERT, or MERGE if incremental]
-    │
-    ▼
-[Builder writes to ai_zone._refresh_log {shape, run_id, rows, hash, fk_consistency_check}]
-[Builder writes audit event]
-    │
-    ▼
-[CI invariant test: every column produced is in ai-zone-view-manifest.yaml; every value's
- source column's field class is compatible with the view's stated composition]
+### Blast-Radius Analysis (Honest)
+
+**If `platform-identity` is compromised:**
+- Attacker gets: read of all `ai_zone.*` views (pseudonymized data only — no email, no PII per architectural commitment), read of `raw_cw.contacts` (recipient resolution — contains names + emails of customer contacts), Anthropic API key (gateway can call Anthropic), Service Bus send to action queue (can emit fake actions).
+- Attacker does NOT get: `raw_*` outside contacts, salts (in `salt-vault`, which etl-identity holds), audit log mutation (audit-identity is the only writer), ability to issue new pseudonyms, source-tool credentials.
+- **Realistic damage:** can drain Anthropic budget; can read ai_zone (pseudonymized; bounded leak); can read customer contact emails (real PII — this is the worst part); can emit fake renewal emails to real customers. Cannot exfiltrate raw PHI/PII at scale because raw schemas are not granted.
+- **Mitigation:** dispatcher's `raw_cw.contacts` grant is the single weak point of consolidation. Treat it as: the dispatcher should be a separate Container App with its own *application-level* authentication (signed action envelopes from the gateway) so attacker who pwns the gateway container cannot directly query contacts — they must produce a valid signed action. This is **app-layer separation, not identity-layer separation** — cheaper and tractable.
+
+**If `etl-identity` is compromised:**
+- Attacker gets: source-tool API keys (can re-pull data from source — but source data is what they'd be exfiltrating from raw_* anyway), salts (can re-derive person_pid from any email — significant), `raw_*` write (can poison data, can write spoofed records), `pseudo.person_map` write.
+- Attacker does NOT get: ai_zone reads (no SELECT grant on ai_zone), Anthropic API, action emission.
+- **Realistic damage:** worst case. Salts are the crown jewel. Compromise = pseudonymization is reversible for any tenant whose salt was accessed.
+- **Mitigation:** etl-identity reads salts from KV with a logged GET. Every salt access is in KV diagnostic logs (forwarded to LAW + WORM). The compromised attacker leaves a perfect audit trail of which tenants they touched. **This is acceptable for the threat model** — Gravity is not protecting against APT; it is protecting against accidental leak, malicious insider, and prompt injection.
+- **Tradeoff acknowledged:** the salt service in the original design gave a separate identity boundary. The simplified design says: KV access policies, KV diagnostic logging, and the small attack surface of an internal ETL worker are sufficient when the budget is $200/mo.
+
+**Verdict on consolidation:** safe given the threat model and the documented compensating control (signed action envelopes between gateway and dispatcher; KV audit logging of every salt fetch).
+
+---
+
+## 4. Salt Handling — Inline in ETL, No Dedicated Service
+
+### Decision: ETL fetches salt from Key Vault per-sync, computes HMAC inline, never caches
+
+### Concrete pattern
+
+```python
+# Inside the pseudonymizer step, called once per (tenant, batch)
+async def pseudonymize_emails(tenant_id: UUID, emails: list[str]) -> dict[str, str]:
+    # Fetch salt for this tenant — KV access logged
+    secret_name = f"salt-{tenant_id}"
+    salt = await kv_client.get_secret(secret_name)  # ephemeral; never assigned to module-level var
+
+    pids = {
+        email_lower: hmac_sha256(salt.value, email_lower.encode()).hexdigest()
+        for email_lower in (e.lower().strip() for e in emails)
+    }
+    # salt goes out of scope at function exit; del explicitly for clarity
+    del salt
+    return pids
 ```
 
-### Flow 4: Agent Query (Agent → AI Zone via Typed Function)
+### HIPAA Risk Assessment
+
+- **What we lose vs separate salt service:** no dedicated identity boundary, no separate VNet-enforced reachability check, no choke-point audit beyond KV's own diagnostic log.
+- **What we keep:** salt material is in Key Vault (HSM-backed at the Standard tier; one-way; access requires the etl-identity managed-identity token); every fetch is logged in KV diagnostic logs (forwarded to LAW); etl-identity has no SELECT grant on `ai_zone.*` and cannot directly reverse pseudonyms it has materialized (it writes `(tenant, email_hash, pid)` to pseudo.person_map and email itself stays in raw zone Always Encrypted).
+- **HIPAA framing:** HIPAA Security Rule §164.312(a)(2)(iv) requires encryption "where reasonable and appropriate." Salts in KV with managed-identity-only access, audit logging, and no caching is **reasonable and appropriate** at this scale. There is no HIPAA requirement for a separate microservice — it is a defense-in-depth pattern, not a regulatory mandate.
+- **Re-evaluate when:** customer count > 200, OR a customer specifically demands separation of duty for cryptographic material, OR Gravity pursues SOC 2 Type II and the auditor flags it.
+
+### What this saves
+
+- 1 Container App (no idle compute, no scale-out cost).
+- 1 managed identity.
+- 1 internal HTTPS hop per pseudonymization.
+- Maintenance of a 200-LOC microservice + its CI/CD pipeline.
+
+---
+
+## 5. Owned AI Gateway — Concrete Design
+
+### Tech: FastAPI (Python) on Container Apps Consumption
+
+Estimated size: **200–400 LOC** for the core handler + middleware. Python because Presidio is Python-native; FastAPI for the typed request/response models.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/messages` | Anthropic-compatible passthrough (mimics Anthropic's Messages API for downstream agent ergonomics) |
+| `GET` | `/health` | Liveness + readiness (KV reachable, SQL reachable, Anthropic reachable) |
+| `GET` | `/budget/{tenant_id}` | Optional: agent introspects remaining token budget |
+
+The gateway exposes the **Anthropic Messages API shape** so agent code can target `https://gateway.barycenter.internal/v1/messages` instead of `https://api.anthropic.com/v1/messages` with no other change. This makes swapping in/out trivial for testing and avoids inventing a bespoke contract.
+
+### Middleware Pipeline (request → response)
 
 ```
-[Agent process (downstream) calls AI Gateway: POST /complete {prompt, tenant_context}]
-    │
-    ▼
-[Gateway: input scrub → token budget → call Anthropic with tools={get_customer_snapshot, …}]
-    │
-    ▼
-[Anthropic returns tool_use: get_customer_snapshot(cw_company_id=12345)]
-    │
-    ▼
-[Gateway forwards tool call to Tool Function Layer: GET /customers/12345/snapshot]
-    │
-    ▼
-[Tool Function Layer (DAB): authenticates agent identity, sets sp_set_session_context with
- tenant claim → SQL RLS predicate filters ai_zone.customer_snapshot to that tenant's rows]
-    │
-    ▼
-[Tool Function Layer returns DTO (no RESTRICTED, no email, only person_pid + buckets)]
-[Tool Function Layer writes audit event {agent, function, params, tenant, rows_returned}]
-    │
-    ▼
-[Gateway returns DTO to Anthropic as tool_result]
-[Anthropic generates completion]
-    │
-    ▼
-[Gateway: output filter (canary regex, identifier regex, PII patterns)]
-[Gateway: writes audit event {prompt_hash, completion_hash, tools_used, tenant, blocked?}]
-[Gateway returns completion to agent]
+[Inbound POST /v1/messages from agent runtime]
+   │
+   ▼
+1. AUTH: validate caller managed-identity token (JWT) → extract tenant_id, agent_id from claims
+   │
+   ▼
+2. RATE-LIMIT / BUDGET CHECK:
+   - SELECT remaining_tokens FROM ai_zone.tenant_token_budget WHERE tenant_id=? AND date=today
+   - If < estimate(prompt_tokens), 429 with Retry-After
+   │
+   ▼
+3. INPUT PRESIDIO SCAN:
+   - Run Presidio analyzer against full prompt body
+   - Detected entities (PHONE, EMAIL, US_SSN, custom CW_COMPANY_NAME, etc.) → score
+   - If score > threshold for category → BLOCK (return 400, audit a "blocked_input" event)
+   - Below threshold → allow but tag the event
+   │
+   ▼
+4. CANARY-TOKEN CHECK (input):
+   - Compare prompt against canary list (synthetic-marker strings loaded into raw zone for VER-01)
+   - If prompt contains a canary → BLOCK + HIGH-SEVERITY audit event ("canary_in_input" — should be impossible by design; indicates raw-zone leak upstream)
+   │
+   ▼
+5. UPSTREAM CALL:
+   - HTTP POST to PINNED Anthropic endpoint (https://api.anthropic.com/v1/messages)
+   - PINNED model version (claude-sonnet-4-5-20250929 or whatever is current; never "latest")
+   - Stream OFF for v1 (simpler audit; revisit if latency demands streaming)
+   - Anthropic API key from KV (see §Secrets)
+   │
+   ▼
+6. OUTPUT PRESIDIO SCAN:
+   - Run analyzer over completion text
+   - PHI/PII detected → REDACT or BLOCK depending on entity class
+   │
+   ▼
+7. CANARY-TOKEN CHECK (output):
+   - If completion contains a canary → CRITICAL audit event ("canary_in_output" — five layers failed, full alert)
+   - Block the response; return 502 to agent with sanitized error
+   │
+   ▼
+8. AUDIT EMIT (async, non-blocking):
+   - Send to Service Bus audit topic; do NOT block response on success
+   - If Service Bus is down: write to local /tmp queue file + critical metric; gateway continues but health check goes amber
+   │
+   ▼
+9. RESPONSE: return completion (or filtered/blocked stub) to agent
 ```
 
-### Flow 5: Agent Action Emission (Agent → Outbound Communication)
+### Why this order
+
+- **Auth first:** zero-trust; never run expensive scans on unauthenticated traffic.
+- **Budget before scan:** scanning costs CPU; budget rejection is cheap.
+- **Input scan before upstream call:** the cheapest, highest-leverage scrub. Stops obvious injection attempts before they reach the LLM.
+- **Canary check after Presidio:** Presidio's regex/ML runs are fast; canary check is a string-membership test. Order is cosmetic but Presidio result feeds into the audit event so it goes first.
+- **Upstream call BEFORE output scans:** obvious — must have output to scan.
+- **Output Presidio THEN output canary:** Presidio identifies entity classes (broad); canary identifies specific known markers (narrow). Both required; either alone is insufficient.
+- **Audit emit LAST and ASYNC:** never block the user-facing response on audit-system health. Service Bus topic absorbs back-pressure; audit-writer Function drains independently.
+
+### Audit Emit Payload (HIPAA-relevant fields)
+
+```json
+{
+  "event_id": "uuid-v7",
+  "event_type": "llm_completion",
+  "schema_version": "1",
+  "occurred_at": "2026-05-02T14:33:21.123Z",
+  "tenant_id": "uuid",
+  "agent_id": "agent-renewal-mgr",
+  "caller_managed_identity": "platform-identity",
+  "request": {
+    "prompt_sha256": "hex...",
+    "prompt_tokens": 1234,
+    "tools_offered": ["get_customer_snapshot", "list_renewals_due", "emit_action"],
+    "input_presidio_findings": [{"entity": "EMAIL", "score": 0.43, "redacted": false}],
+    "input_canary_hit": false
+  },
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-sonnet-4-5-20250929",
+    "endpoint": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "completion_sha256": "hex...",
+    "completion_tokens": 567,
+    "tools_called": [{"name": "get_customer_snapshot", "params_sha256": "hex...", "rows_returned": 1}],
+    "output_presidio_findings": [],
+    "output_canary_hit": false,
+    "blocked": false,
+    "block_reason": null
+  },
+  "budget": {
+    "tokens_consumed": 1801,
+    "tokens_remaining_today": 48199
+  },
+  "chain": {
+    "prior_event_sha256": "hex...",
+    "this_event_sha256": "hex..."
+  }
+}
+```
+
+**Why these fields:**
+- `tenant_id` — required for HIPAA accounting of disclosures (164.528).
+- `prompt_sha256` / `completion_sha256` — store hashes, not content, in the searchable Log Analytics table; full content goes to WORM blob only. (Reduces LAW ingestion cost; preserves forensic completeness in WORM.)
+- `caller_managed_identity` + `agent_id` — who initiated.
+- `tools_called[].params_sha256` + `rows_returned` — chain-of-custody for what data was accessed via tool functions.
+- `input/output_canary_hit` — VER-01 detection signal, queryable in LAW.
+- `chain.prior_event_sha256` — cryptographic chaining; tampering with the WORM blob breaks the chain mathematically.
+
+### Anthropic API Key Storage
+
+- Stored in Azure Key Vault `api-vault` as secret `anthropic-api-key`.
+- Gateway container env spec uses **Key Vault reference**, not literal value:
+  ```yaml
+  secrets:
+    - name: anthropic-api-key
+      keyVaultUrl: https://api-vault.vault.azure.net/secrets/anthropic-api-key
+      identity: system  # platform-identity managed identity
+  env:
+    - name: ANTHROPIC_API_KEY
+      secretRef: anthropic-api-key
+  ```
+- Container Apps re-resolves the KV reference on revision creation. Rotation = update KV secret + bump revision.
+- **Never** in env-var literal, never in image, never in Git.
+
+---
+
+## 6. Component List (Simplified — 6 Components)
+
+| # | Component | Hosted on | Identity | Reads | Writes | Calls |
+|---|-----------|-----------|----------|-------|--------|-------|
+| 1 | **Adapter Jobs** (one config per source tool, shared base image) | Container Apps **Job**, Consumption, scheduled cron | etl-identity | `api-vault` (source secrets), `salt-vault` (salts at sync), `raw_*` (R for delta cursors) | `raw_*`, `pseudo.person_map`, audit topic | source-tool APIs (via FortiGate egress allow) |
+| 2 | **AI-Zone Builder** (single job; runs all `etl.builders.*` stored procs on schedule) | Container Apps **Job**, Consumption, cron every 15 min | etl-identity | `raw_*`, `pseudo.*` | `ai_zone.*` (refreshed tables only — indexed views are auto), audit topic | SQL stored procs only |
+| 3 | **Typed-Function Service** (FastAPI; ~300 LOC; exposes `get_customer_snapshot`, `list_renewals_due`, `emit_action`, etc.) | Container App, Consumption, scale-to-zero | platform-identity | `ai_zone.*` (SELECT) | Service Bus action queue (for emit_action), audit topic | SQL (via PE) |
+| 4 | **AI Gateway** (FastAPI; ~300 LOC; LLM proxy with Presidio + canary + budget + audit) | Container App, Consumption, scale-to-zero | platform-identity | `api-vault` (Anthropic key), `ai_zone.tenant_token_budget` | audit topic | Anthropic (via FortiGate egress allow), typed-function service (for tool calls) |
+| 5 | **Action Dispatcher** (Python; ~200 LOC; consumes action queue, resolves recipients, sends) | Container App, Consumption, KEDA-scaled on Service Bus | platform-identity | `raw_cw.contacts` (narrow grant for recipient resolution), Service Bus action queue | audit topic, sent message log | Microsoft Graph mail (or SMTP) — via FortiGate allow |
+| 6 | **Audit Writer** (Azure Function, Python; consumes audit topic, chains, writes WORM + LAW) | Azure Functions, Consumption (Service Bus trigger) | audit-identity | Service Bus audit topic (Receive) | WORM blob (append), Log Analytics workspace | none |
+
+**Cross-cutting infra (not "components" but listed for completeness):**
+- Azure SQL DB (GP Serverless 1 vCore)
+- Azure Key Vault (single vault, three logical secret prefixes: `salt-*`, `cmk-*`, `api-*`) — collapsed from three vaults to one to save on PE costs; access control via secret-name-prefix on the access policy
+- Azure Service Bus (Basic tier: audit topic + action queue)
+- Storage Account (WORM container with immutability policy, 6-yr retention for HIPAA-tagged days)
+- Log Analytics workspace (90-day retention, Pay-As-You-Go)
+- FortiGate VM (hub VNet)
+- Bastion (admin access)
+
+### Cost Roll-Up
+
+| Item | $/mo |
+|------|------|
+| FortiGate VM + public IP | ~$65 |
+| Azure SQL GP Serverless 1 vCore (auto-pause, 32 GB) | ~$25 |
+| SQL Private Endpoint | ~$8 |
+| Container Apps Consumption (6 components, mostly idle) | ~$15 |
+| Azure Functions Consumption (audit writer) | ~$2 |
+| Service Bus Basic | ~$0.05/M msgs — ~$1 |
+| Key Vault Standard + 3 PEs collapsed to 1 | ~$8 |
+| Storage WORM + Storage PE | ~$5 |
+| Log Analytics (90-day, ~5 GB/mo) | ~$12 |
+| Bastion Developer | ~$0–7 |
+| VNet peering, DNS zones, public IPs | ~$5 |
+| **Total** | **~$146–153/mo** |
+
+Headroom: ~$45–55/mo for unexpected ingestion spikes, FortiGate scale-up to F4s_v2 if needed, or future Sentinel add-on.
+
+---
+
+## 7. Build Order (4 Phases)
+
+### Phase 1 — Network + Data Foundations (must exist before any data flows)
+
+1. Hub VNet + FortiGate VM deployed; UDRs in place; baseline policies (default deny + management).
+2. Spoke VNet with all five subnets; peering established; UDRs forcing 0/0 through FortiGate.
+3. Azure SQL GP Serverless provisioned; Private Endpoint in `data-subnet`; public network access disabled.
+4. Schemas created: `raw_cw`, `raw_pax8`, `raw_graph` (placeholder), `ai_zone`, `pseudo`. Schema-level grants applied (etl-identity CRUD on raw_*; platform-identity SELECT on ai_zone only; etc.).
+5. Single Key Vault provisioned with PE; access policies for etl-identity (salt-* + api-*), platform-identity (api-anthropic only), admin-identity (all, JIT).
+6. Storage account + WORM container with immutability policy (test with a 1-day retention first; lock to 6-yr only after policy validated).
+7. Log Analytics workspace; diagnostic settings on KV, SQL, Container Apps, FortiGate → LAW.
+8. Service Bus namespace + audit topic + action queue.
+9. Field-class registry committed to repo (`compliance/field-class-registry.yaml`); CI gate enforced.
+10. Audit Writer Function deployed and tested with synthetic events (chain integrity verified end-to-end).
+
+**Lock-early decisions (irreversible without rework):** schema-per-tool, single SQL DB, schema-isolation grants, audit chain format, identity topology (4 identities), WORM retention period.
+
+### Phase 2 — Tool Onboarding Framework + First Tool
+
+11. Eight T-SQL transformation primitives implemented and tested.
+12. Adapter base image (Python) with hooks: `fetch_page`, `to_staging_row`, `delta_cursor`. Pseudonymizer step inline in base.
+13. ConnectWise adapter (tool #1 — issues cw_company_id, the root identifier). Field map and ETL recipe in `adapters/connectwise/`.
+14. AI-Zone Builder Job with first two shapes: `customer_snapshot` (indexed view) and `timeseries_aggregate` (refreshed table).
+15. End-to-end smoke test: synthetic CW data → raw_cw → ai_zone.customer_snapshot. No agent yet.
+
+**Lock-early:** the eight primitives, the four AI-zone shapes, the adapter base contract, the cursor convention.
+
+### Phase 3 — Agent-Safe Access Layer (the five layers all turn on)
+
+16. Typed-Function Service deployed; first three functions (`get_customer_snapshot`, `list_renewals_due`, `emit_action`); RLS predicates active; platform-identity grants validated.
+17. Action Dispatcher deployed; signed-action-envelope contract between Typed-Function Service and Dispatcher (app-layer separation since they share platform-identity).
+18. AI Gateway deployed with Presidio, canary list, budget enforcement, audit emission. Initial canary list seeded with synthetic markers.
+19. Per-tenant per-class opt-out enforced at gateway and tool functions.
+20. **VER-01 leak test** wired into CI: synthetic markers in raw_cw → run agent flows → grep audit for marker hits → fail on any hit.
+21. Adversarial prompt-injection corpus in CI (COMP-05).
+
+**Lock-early:** typed-function naming, action envelope schema, canary token format, audit payload schema, leak-test marker format.
+
+### Phase 4 — Tools 2–4 + Compliance Posture
+
+22. Pax8 adapter (subscriptions domain).
+23. Microsoft Graph adapter (pseudonymization at scale — every M365 user).
+24. Email-derived signals adapter (last; hardest correctness — keyword_flags + score on free text).
+25. CUI exclusion controls (per-customer flag, sync-time filters, regex CUI marker detection).
+26. Customer erasure workflow end-to-end + leak-test re-run after erasure.
+27. Subprocessor inventory + DPA template + change-notification workflow.
+28. Production sizing review: monthly partitioning on high-volume tables; cold archive to Parquet on Blob after retention thresholds.
+
+**Compliance items deferred to "when we pursue SOC 2":** Drata/Vanta connector, formal evidence collection automation, quarterly access review tooling. Documented and scriptable in `compliance/runbooks/` until then.
+
+---
+
+## 8. ASCII Data Flow Diagrams
+
+### (a) ETL Sync — Source Tool → Raw Zone → AI Zone
 
 ```
-[Agent (via Anthropic) emits structured action via Tool Function Layer:]
-[  POST /actions {action: "send_renewal_reminder", company: "cw_company_id=12345",]
-[                 recipient_role: "billing_admin", template: "renewal_30day", fields: {…}}]
-    │
-    ▼
-[Tool Function Layer validates action shape against schema]
-[Tool Function Layer enqueues to action queue (Service Bus)]
-[Tool Function Layer returns action_id to agent — agent never sees email]
-    │
-    ▼
-[Action Dispatcher consumes queue]
-[Action Dispatcher resolves recipient_role → email via raw_cw.contacts (raw zone read)]
-[Action Dispatcher renders template + fields → message]
-[Action Dispatcher sends via outbound provider (SMTP, Graph mail, ticket post)]
-[Action Dispatcher writes audit event {action_id, agent, resolved_recipient_hash, sent_at}]
-    │
-    ▼
-[Decision-reversal path: every dispatched action has a registered reversal procedure
- documented in compliance/runbooks (per COMP-05). Action records its reversal contract.]
+[Source API e.g. ConnectWise]
+       │  HTTPS
+       ▼
+┌──────────────┐    Adapter scheduled (cron)
+│ FortiGate    │    egress policy: etl-subnet → CW FQDN ALLOW
+│ (hub)        │    NOT to anthropic, NOT to graph (this adapter)
+└──────┬───────┘
+       │ inspected, IPS
+       ▼
+┌──────────────────────────────────────┐
+│ etl-subnet (10.20.0.0/26)            │
+│  ┌────────────────────────────────┐  │
+│  │ Adapter Job (Container App)    │  │
+│  │ identity: etl-identity         │  │
+│  │ 1. KV GET api-cw-secret        │──┼──► Key Vault (via PE)
+│  │ 2. fetch_page() loop           │  │
+│  │ 3. KV GET salt-{tenant} for    │──┼──► Key Vault (each tenant batch)
+│  │    each tenant in batch        │  │
+│  │ 4. HMAC inline → person_pids   │  │
+│  │ 5. SQL BULK INSERT staging     │──┼──► SQL PE (data-subnet)
+│  │ 6. SQL EXEC merge proc         │  │
+│  │ 7. SQL UPSERT pseudo.person_map│  │
+│  │ 8. Service Bus SEND audit evt  │──┼──► SB (audit topic)
+│  └────────────────────────────────┘  │
+└──────────────────────────────────────┘
+       │
+       ▼ (separate scheduled trigger)
+┌──────────────────────────────────────┐
+│ AI-Zone Builder Job                  │
+│ identity: etl-identity               │
+│  - SQL EXEC etl.builders.snapshot    │──► SQL PE
+│  - SQL EXEC etl.builders.timeseries  │
+│  - audit emit                        │──► SB
+└──────────────────────────────────────┘
+
+[Audit topic] ──► [Audit Writer Function, audit-identity]
+                     │
+                     ├──► WORM blob (append, chained)
+                     └──► Log Analytics workspace
 ```
 
-### Flow 6: Customer Erasure
+### (b) Agent Query — Agent → Gateway → Anthropic → Tool Function → SQL
 
 ```
-[Admin via PIM elevates → triggers erasure workflow with dual approval]
-    │
-    ▼
-[Erasure orchestrator:]
-[  1. Salt service: erase tenant salt → record erasure timestamp]
-[  2. raw_*.*: anonymize or delete tenant rows per retention policy]
-[  3. pseudo.person_map: mark tenant entries erased (pids become non-reversible)]
-[  4. ai_zone.*: refresh — pids that pointed to nothing now point to nothing more strongly]
-[  5. WORM audit: write erasure event (audit log itself is NOT erased — HIPAA requires retention)]
-[  6. Drata/Vanta evidence: update]
-    │
-    ▼
-[Verification: leak test (VER-01) re-run with that tenant's markers — must find zero hits]
+[Downstream Agent Runtime]
+       │ POST /v1/messages
+       ▼
+┌──────────────┐
+│ FortiGate    │ services-subnet inbound from agent VNet OK; outbound to anthropic.com OK
+└──────┬───────┘
+       ▼
+┌──────────────────────────────────────────────────┐
+│ services-subnet (10.20.0.64/26)                  │
+│  ┌────────────────────────────────────────────┐  │
+│  │ AI Gateway (Container App)                 │  │
+│  │ identity: platform-identity                │  │
+│  │ 1. AUTH: validate caller MI token          │  │
+│  │ 2. BUDGET: SELECT remaining FROM ai_zone   │──┼──► SQL PE
+│  │ 3. INPUT Presidio + canary scan            │  │
+│  │ 4. POST anthropic /v1/messages             │──┼──► FortiGate ──► api.anthropic.com
+│  │    (key from KV ref)                       │  │
+│  │ 5. Anthropic returns tool_use:             │  │
+│  │    get_customer_snapshot(cw_company_id=X)  │  │
+│  │ 6. GET typed-function-svc/customers/X/snap │──┼──┐
+│  │ 7. Forward tool_result to Anthropic        │  │  │
+│  │ 8. Anthropic returns final completion      │  │  │
+│  │ 9. OUTPUT Presidio + canary scan           │  │  │
+│  │ 10. SB SEND audit event (async)            │──┼──┼──► SB audit topic
+│  │ 11. Return completion to agent             │  │  │
+│  └────────────────────────────────────────────┘  │  │
+│                                                  │  │
+│  ┌────────────────────────────────────────────┐  │  │
+│  │ Typed-Function Service (Container App)     │◄─┼──┘
+│  │ identity: platform-identity                │  │
+│  │ - sp_set_session_context tenant_id         │──┼──► SQL PE
+│  │ - SELECT ai_zone.customer_snapshot WHERE   │  │
+│  │   RLS predicate filters by tenant claim    │  │
+│  │ - return DTO (no email, only person_pid)   │  │
+│  │ - SB SEND audit event                      │──┼──► SB
+│  └────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────┘
+```
+
+### (c) Agent Action Emission — Agent → Tool Function → Dispatcher → Customer
+
+```
+[Agent (via Anthropic via Gateway)]
+       │ tool_use: emit_action({action, company, role, template, fields})
+       ▼
+┌────────────────────────────────────────────┐
+│ Typed-Function Service                     │
+│ identity: platform-identity                │
+│ - validate action shape vs schema          │
+│ - SIGN action envelope with HMAC(svc-key)  │  ← signed envelope = app-layer
+│ - SB SEND signed action to action queue    │    separation between gateway-side
+│ - return action_id (no email to agent)     │    and dispatcher-side
+└────────────────┬───────────────────────────┘
+                 │
+                 ▼ (Service Bus action queue)
+                 │
+┌────────────────▼───────────────────────────┐
+│ Action Dispatcher (Container App, KEDA)    │
+│ identity: platform-identity                │
+│ - VERIFY signature (reject if invalid)     │
+│ - SELECT email FROM raw_cw.contacts        │──► SQL PE (narrow grant)
+│   WHERE company_id=? AND role=?            │
+│ - render template + fields                 │
+│ - send via Graph mail / SMTP               │──► FortiGate ──► graph.microsoft.com
+│ - SB SEND audit event                      │      (only allowed for services-subnet)
+│   {action_id, recipient_hash, sent_at}     │──► SB audit topic
+└────────────────────────────────────────────┘
+
+[Decision-reversal path]
+- Every action_id has registered reversal contract in compliance/runbooks/
+- Audit log retains full trail for HIPAA disclosure accounting
 ```
 
 ---
 
-## Build Order (Phase Boundary Recommendations)
+## Defense-Layer Map
 
-This is the dependency-ordered sequence the roadmap should encode. Each block is a candidate phase boundary.
+Each of the five layers, mapped to specific simplified-design components.
 
-### Block A — Foundations (must exist before tool #1)
+| # | Layer | Enforced by | Failure mode if breached |
+|---|-------|-------------|--------------------------|
+| 1 | **SQL schema permissions** | `platform-identity` has zero grants on `raw_*` and `pseudo.*`; `etl-identity` has zero grants on `ai_zone.*`. Enforced in `sql/40-grants/` migrations. | Grant drift — VER-02 CI gate detects; periodic grant audit query |
+| 2 | **AI-safe views** | `ai_zone.*` views and refreshed tables — every column tagged in `compliance/ai-zone-view-manifest.yaml`; CI fails if any view exposes a RESTRICTED-tagged source column or unhashed SENSITIVE column | Manifest drift — VER-02; manual review on every view PR |
+| 3 | **Typed tool functions** | Typed-Function Service is the *only* path agent can use to read SQL; agents are given `tools=[get_customer_snapshot, list_renewals_due, emit_action]` only. No DAB mutation, no raw query. | Function shape too broad — review every new function for parameter types and return DTOs |
+| 4 | **Gateway scrubbing** | AI Gateway: Presidio input + output, canary lists, per-tenant budget, opt-out enforcement, pinned model, pinned endpoint | Bypass = direct call to Anthropic — but FortiGate egress policy denies anthropic.com from any subnet *except* services-subnet, and only the gateway runs there |
+| 5 | **Per-prompt audit** | Audit Writer Function: SHA-256 chained, WORM-locked, mirrored to LAW. Every gateway call, every typed function call, every action dispatch emits an audit event | Tampering = chain breaks (mathematically detectable); WORM immutability prevents deletion within retention window |
 
-1. **Field-class registry + field-class CI gate** (FOUND-02, VER-02). Just YAML + a test. Two days. Locks the discipline.
-2. **Network + identity infrastructure**: VNet, private endpoints, three Key Vaults (salt, cmk, api), four managed identities (etl, salt, tool, gateway), PIM rules. (IDENT-01, IDENT-02, IDENT-03, EGRESS-01)
-3. **Azure SQL provisioned with schemas + grants** (`raw_*` placeholder, `ai_zone`, `pseudo`), Always Encrypted CMK in cmk-vault, RLS policy templates. (FOUND-01, ENC-01)
-4. **Audit plane**: Service Bus topic, audit-writer Function, WORM container with retention policy locked, Sentinel forwarding. (AUDIT-01, AUDIT-02)
-5. **Salt service** deployed and tested with synthetic tenant. (FOUND-03, supports D-10)
-
-**Why this order:** None of these depend on a specific tool. All of them must be in place before the first real PII row is written. The audit plane comes before the first tool because if the audit format changes after data has flowed, retroactive audit is hard.
-
-**Lock-early decisions in Block A:** schema-per-tool, schema-per-zone-isolation, salt-service-as-microservice, audit chain format, identity topology. Changing any of these later is multi-week work.
-
-### Block B — Tool onboarding framework (must exist before tool #2)
-
-6. **Eight transformation primitives implemented as T-SQL stored procs** with tests. (TOOL-02)
-7. **Tool Onboarding Spec template + adapter base class** in `adapters/_base/`. (TOOL-01)
-8. **Pseudonymizer ETL step** wired to salt service. (FOUND-03)
-9. **Adapter for tool #1: ConnectWise Manage** — exercises every primitive, every shape contribution. CW is the right "tool #1" because it issues `cw_company_id` (the root identifier in the hierarchy). (INT-01)
-10. **First two AI-zone shapes**: `ai_zone.customer_snapshot` (indexed view) and `ai_zone.timeseries_aggregate` (refreshed table). Validates both physical patterns. (TOOL-03)
-
-**Why this order:** The framework is built and validated by the first tool. Tool #1 is the framework's regression test.
-
-**Lock-early decisions in Block B:** the eight primitives, the four shapes, the tool onboarding spec format, the cursor/delta-sync convention. Changing the shape contract later forces every tool to be re-onboarded.
-
-### Block C — Agent-safe access layer (must exist before agents can consume)
-
-11. **Tool Function Layer (DAB + custom service)** with first three typed functions: `get_customer_snapshot`, `list_renewals_due`, `emit_action`. (ACCESS-01, ACCESS-02)
-12. **Action Dispatcher** consuming action queue, sending via Graph/SMTP. (ACCESS-03)
-13. **AI Gateway** with input scrub, output filter, canary detection, audit emission. (ACCESS-04)
-14. **Per-tenant per-class opt-out enforcement** in the gateway and tool functions. (ACCESS-05)
-15. **End-to-end leak test (VER-01)** with synthetic markers, wired into CI on every raw/view/grant change.
-
-**Why this order:** Tool function layer first so the gateway has a real backend; gateway last so output filtering is applied to real completions, not mocks. Leak test is the final acceptance gate — if it passes, the architectural moat is verifiable.
-
-**Lock-early decisions in Block C:** the typed function naming convention, the action-emission contract format, the canary token format, the leak-test marker format. These ripple into every agent that ever consumes Barycenter.
-
-### Block D — Onboard tools #2 and #3
-
-16. **Pax8** (INT-02) — exercises the framework on a different domain (subscriptions, not tickets).
-17. **Microsoft Graph** (INT-03) — exercises pseudonymization at scale (every M365 user has an email; every customer has 10–500 users).
-18. **Email-derived signals adapter** (INT-04) — exercises the keyword_flags and score primitives on free text. Highest pseudonymization risk; do third when the framework is mature.
-
-**Why this order:** Each tool exercises a different framework dimension. Email signals last because the adapter must produce structured extracts (PO numbers, intent, sentiment) without raw bodies; this is the hardest correctness problem and benefits from a hardened framework.
-
-**Lock-early decisions in Block D:** none new — these are framework users, not framework definers.
-
-### Block E — Compliance + operations posture
-
-19. **Drata or Vanta** wired in (read-only managed identity, evidence collectors enabled). (COMP-02)
-20. **CUI exclusion controls** (per-customer flag, sync-time filters in adapters, regex CUI marker detection, quarterly verification). (COMP-03)
-21. **Subprocessor inventory + DPA template** + change-notification workflow. (COMP-04)
-22. **AI-specific posture**: model card, DPIA, prompt-injection adversarial corpus in CI, decision-reversal runbook for every emitted action. (COMP-05)
-23. **Erasure workflow** end-to-end: documented + tested + leak-test re-run after erasure. (ERAS-01)
-24. **Production sizing baseline + monthly partitioning + cold archive to Parquet.** (OPS-01)
-
-**Why this order:** Drata can collect evidence the moment infra exists; pull it forward. CUI controls land before high-PII tools (Graph, email signals) — block 20 actually overlaps with block D. Subprocessor and AI-specific posture are documentation-heavy and can run in parallel with development.
-
-**Lock-early decisions in Block E:** subprocessor list (changing means customer notification per COMP-04), DPIA structure, retention table.
-
-### Decisions that can iterate (don't lock early)
-
-- **Indexed-view vs refreshed-table choice per shape.** Make per-shape; reversible.
-- **Adapter language** — Python is recommended but a tool with a great .NET SDK can be a .NET adapter. Adapter base class abstraction is per-language; not a global commit.
-- **Refresh cadence** for AI-zone shapes. Tunable per-shape based on observed staleness needs.
-- **Specific gateway scrubbing rules.** Add as you discover patterns.
-- **Whether `customer_memory` is in SQL or in a separate store** (e.g., a vector store). Recommendation: start in SQL as JSON; revisit if agents demand semantic recall.
+**The five layers all hold under simplification.** None of them depend on the dropped components (APIM, Sentinel SIEM, dedicated salt service, Drata).
 
 ---
 
-## Scaling Considerations
+## Anti-Patterns Retained from Original (Still Apply)
 
-Sized for Gravity's actual scale (single MSP, ~hundreds of customers, ~tens of tools), not generic "data platform" scale.
+These remain wrong in the simplified design too — see the prior architecture document's anti-pattern section for full reasoning. Brief restatement:
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| **Today (initial):** ~10 customers, 1–3 tools synced, agent traffic light | Single Azure SQL DB on Standard tier (S2/S3). Production sizing baseline OPS-01 mandates Standard or higher; Basic is dev-only. Single Container Apps environment. Audit-writer Function on consumption plan. |
-| **Steady state:** ~100 customers, 10–15 tools, multiple agents | Standard S6 or Premium P1 for Azure SQL — DTU pressure mainly from ETL, not agent reads. Monthly partitioning on high-volume tables (ticket time entries, Graph signin events). Indexed views become valuable. Salt service and gateway each scale independently in Container Apps; expect 1–3 replicas. |
-| **Outer bound:** ~500 customers, 30+ tools | Consider read replica for ai_zone reads if tool-function-layer load competes with ETL writes. Cold archive to Parquet on Blob after 13-month retention threshold (RET-01). May want partitioned-tables-as-views for raw_*.events-style tables. |
+1. **Shared raw schema with `source_tool` column** — schema-per-tool stays.
+2. **Pseudonymization as SQL view function** — even simplified, salt material does not live in SQL. KV-only access.
+3. **Agent constructs SQL freely** — typed functions only; no DAB raw query exposure to agents.
+4. **APIM policy soup as gateway** — explicitly rejected; owned FastAPI.
+5. **LLM-based identity reconciliation** — never; deterministic HMAC only.
+6. **AI-zone derived data outside Azure SQL** — single store; revisit only on agent demand for vector recall.
+7. **ETL identity reused as admin identity** — admin-identity is PIM-JIT only; etl-identity is service-only.
 
-### Scaling Priorities (what breaks first)
+**New anti-pattern relevant to simplified design:**
 
-1. **First bottleneck: ETL DTU pressure from per-tool full re-syncs.** Mitigation: enforce delta-cursor discipline; full re-sync is opt-in and runs in low-traffic windows. Already designed into Pattern 2.
-2. **Second bottleneck: Salt service throughput on bulk Graph user sync.** Mitigation: salt service supports batch endpoint; ETL pseudonymization is a single bulk call per tenant per run, not per row.
-3. **Third bottleneck: Audit chain serialization** if event volume spikes (every agent prompt + every tool function + every dispatch). Mitigation: audit-writer Function is single-writer by design (chain integrity), but Service Bus topic supports back-pressure; consider chain segmentation per-day if events ever exceed ~10k/sec (won't happen at this scale).
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Shared raw schema with `source_tool` discriminator column
-
-**What people do:** A single `raw.entities` table with a `source_tool` column (or a single `raw` schema with `cw_companies`, `pax8_subscriptions` cohabiting).
-
-**Why it's wrong:**
-- Grants are coarse — revoking ETL access to one tool revokes all.
-- Schema drift is global — Pax8 adding a column risks breaking CW queries.
-- Field-class review is global — every PR touches the shared schema and reviewers lose context.
-- Retention policies have to be row-level, not table-level, which is expensive and error-prone.
-
-**Do this instead:** Schema-per-tool. Pattern 1 above.
-
-### Anti-Pattern 2: Pseudonymization as a SQL view function
-
-**What people do:** Create a SQL function `dbo.pseudonymize(email)` that reads the salt from a table and exposes via a view.
-
-**Why it's wrong:**
-- Whoever can read the salt table can de-pseudonymize. Salt material in SQL means SQL access ⇒ de-pseudonymization.
-- Erasure becomes "delete a row in a salt table" — easy to mis-execute.
-- No audit chokepoint — every view access is an implicit pseudonymization.
-
-**Do this instead:** Salt service microservice. Pattern 3 above. Salt material lives in Key Vault, accessed only by `salt-runtime` identity, never by ETL or agent identities directly.
-
-### Anti-Pattern 3: Agent constructs SQL or queries DAB freely
-
-**What people do:** Give the agent broad DAB access ("agents can SELECT from any ai_zone view") in the name of flexibility.
-
-**Why it's wrong:**
-- The "typed" in typed tool functions becomes a fiction. Agents drift toward composing SQL-like queries from prompts.
-- Audit becomes per-query, not per-intent. "What was the agent trying to do?" is unanswerable.
-- The output-filter rules can't be tightened to specific function shapes if the surface is "any view."
-
-**Do this instead:** Each typed function is enumerated, named, parameter-typed, and individually grantable. The `Anthropic tools` list given to the model contains the explicit set, not "query database."
-
-### Anti-Pattern 4: AI gateway as Azure API Management policy soup
-
-**What people do:** Use Azure API Management with a stack of policies (rate limit, token validation, body filter, etc.) instead of a custom gateway.
-
-**Why it's wrong:**
-- APIM policies are XML-on-rails. Canary detection logic, cryptographic audit chaining, per-tenant per-class opt-out — these are awkward to express in policy XML and hard to test.
-- APIM doesn't naturally express HMAC chaining or structured per-prompt audit.
-- Debugging an output filter that lives in APIM policy is materially worse than debugging it in code.
-
-**Do this instead:** Build a small owned gateway (Pattern 6). APIM is fine for consumer API gateway concerns; not for the LLM safety boundary.
-
-### Anti-Pattern 5: Cross-tool person identity reconciled by an LLM
-
-**What people do:** "Pax8 has a contact 'jane.smith@acme.com', CW has 'JaneS@acme.com', let the LLM merge them."
-
-**Why it's wrong:**
-- Out of scope per PROJECT.md, but the architectural reason is: LLM sees PII (the emails) before reconciliation. The whole pseudonymization stack assumes PII never reaches the model.
-- Non-determinism — same data could produce different reconciliations on re-run, breaking historical aggregates.
-
-**Do this instead:** Deterministic in raw zone. `email_lower` is the merge key. Salt service produces the same `person_pid` for the same `(tenant, email_lower)`. If a customer truly has `JaneS@acme.com` and `jane.smith@acme.com` as the same person, that's a CW/Pax8 data quality fix, with code review, not an AI inference.
-
-### Anti-Pattern 6: Storing AI-zone derived data outside Azure SQL
-
-**What people do:** Push `customer_features_*` into Cosmos DB or a vector store because "agents query it."
-
-**Why it's wrong:**
-- Two stores ⇒ two schema-permission boundaries to enforce ⇒ doubled compliance surface.
-- Pseudonymization invariants are now two places' problem.
-- The architectural claim "agent identity has zero grants on raw_*" is degraded — now there's a second store with a second grant model.
-
-**Do this instead:** Keep ai_zone in Azure SQL alongside raw. The two-zone model is a schema boundary, not a database boundary. (If a future agent workload genuinely needs vector recall on `customer_memory`, add it then, with explicit re-architecture; not preemptively.)
-
-### Anti-Pattern 7: ETL identity reused as admin or dev identity
-
-**What people do:** Single Azure service principal used by ETL pipeline and by humans during development.
-
-**Why it's wrong:**
-- "ETL has zero grants on ai_zone" is unenforceable when ETL is also the developer's identity.
-- Audit trail conflates human queries with automated ones.
-- PIM elevation can't be applied — it's an automation identity, not a human one.
-
-**Do this instead:** Per-service managed identities (IDENT-03). Humans use named Entra accounts elevated through PIM (IDENT-02). No service principal is ever shared between automation and human use.
+8. **Letting `platform-identity` directly query `raw_cw.contacts` from any code path.** The dispatcher needs it; no other component does. Enforce by application-layer signed envelopes, not just SQL grants — because the grant is on the identity and three components share that identity.
 
 ---
 
-## Integration Points
+## Decisions That Must Be Locked Early (Revised)
 
-### External Services
-
-| Service | Integration Pattern | Notes / Gotchas |
-|---------|---------------------|-----------------|
-| **ConnectWise Manage** | REST API, RFC 5988 link-header pagination, 30-min delta sync. Default 60 req/min rate limit. | Page size up to 1000 with `pageSize` parameter. Use `forward-only` pagination header for large pulls. Store delta cursor in `raw_cw._sync_state`. |
-| **Pax8** | REST API, OAuth 2.0. | Rate limits not well-documented; implement defensive backoff. Subscriptions are the primary entity; pull SKU catalog separately. |
-| **Microsoft Graph** | Microsoft Graph SDK, delta queries (`/users/delta`). | Delta queries are the primary mechanism for incremental sync. Throttling is per-tenant — back off on 429. Hash users → `person_pid` at ingest, never store email in ai_zone. |
-| **RMM (Ninja, Datto, etc.)** | Per-vendor REST APIs. | Heterogeneous; this is where the adapter framework's value is highest. Serial numbers are the asset identity. |
-| **SentinelOne / Duo / security** | Per-vendor REST. | Sensitive: alerts may contain raw indicators of compromise. Aggregate to counts and severity buckets in ai_zone; never expose raw alerts. |
-| **Anthropic Claude** | Direct API (BAA + zero-retention), via owned AI gateway only. | Enterprise plan + BAA confirmed in writing per COMP-01. Anthropic is the only LLM; gateway abstracts so we *could* swap, but no current plan to. |
-| **Microsoft Sentinel** | Log forwarding from audit-writer + Container Apps log analytics. | Sentinel is downstream of the WORM chain — chain is canonical, Sentinel is queryable mirror. |
-| **Drata / Vanta** | Their managed identity granted Reader on subscription + Sentinel Reader. **No write access.** | Pick one, lock in — switching costs are control-mapping rework, not technical. Both support Azure equivalently. Drata for depth, Vanta for breadth — recommendation deferred to operations preference. |
-
-### Internal Boundaries
-
-| Boundary | Communication | Considerations |
-|----------|---------------|----------------|
-| **Adapter ↔ raw zone** | Direct SQL via private endpoint; `etl-runtime` identity. | Schema-bounded grants — etl identity has CRUD on `raw_<tool>` only, write on `pseudo`, **zero** on `ai_zone`. |
-| **ETL ↔ Salt service** | Internal HTTPS, mTLS or managed-identity bearer token. | Salt service in same VNet, NSG denies traffic from any non-ETL identity. |
-| **AI-zone Builder ↔ raw + pseudo + ai_zone** | Direct SQL; `etl-runtime` identity (same as ETL adapters). | Builder is a different class of job but same identity. RLS not needed at this layer (operates on full tenant set). |
-| **Tool Function Layer ↔ ai_zone** | Direct SQL via DAB; `tool-runtime` identity. | Identity has SELECT on `ai_zone.*` only. RLS predicates filter by tenant claim from session context. **Zero** on raw and pseudo. |
-| **Action Dispatcher ↔ raw zone** | Direct SQL with narrow grant: SELECT on `raw_cw.contacts` (or equivalent) only. | This is the *only* component besides ETL that reads raw zone. Documented and audited. |
-| **AI Gateway ↔ Tool Function Layer** | Internal HTTPS. | Gateway holds the agent identity claim; passes through to tool functions. Tool functions log the agent identity, not the gateway identity. |
-| **AI Gateway ↔ Anthropic** | Outbound HTTPS via egress allowlist (anthropic.com on the agent VNet). | The *only* outbound traffic permitted from the agent VNet besides SQL and Storage. |
-| **Everything ↔ Audit topic** | Service Bus topic, fire-and-forget. | Every component has Send rights on the topic; only audit-writer has Receive. |
-| **Audit-writer ↔ WORM** | Append-blob writes. Identity has *only* this permission, on *only* this container. | Immutability policy locked at container creation; deletion of audit-writer identity does not delete the data. |
+| Decision | Reversal cost | Lock in phase |
+|----------|---------------|---------------|
+| Hub-and-spoke topology + FortiGate placement | Multi-week network rework | Phase 1 |
+| 4-identity consolidation | Identity changes ripple through grants, RLS, KV access policies | Phase 1 |
+| Salt-in-ETL (no salt service) | Refactor to extract salt service is ~1 week; tractable | Phase 1, but reversible |
+| Single Key Vault with secret-name-prefix access | Splitting later is straightforward; mostly an audit/clarity loss | Phase 1, reversible |
+| Owned FastAPI gateway shape | Replace with vendor product later if needed; audit format compatibility is the hard part | Phase 3 |
+| Audit chain format + WORM retention | Cannot retroactively change | Phase 1 |
+| Schema-per-tool + 8 primitives + 4 shapes | Tool re-onboarding cost | Phase 2 |
+| Signed-action-envelope between gateway-side and dispatcher | Cheap to add; expensive to retrofit if compromise occurs first | Phase 3 |
 
 ---
 
-## Decisions That Must Be Locked Early
+## Quality-Gate Self-Check
 
-These have multi-week reversal cost. Get them right in Block A or B.
-
-| Decision | Why expensive to change | Recommendation |
-|----------|------------------------|----------------|
-| **Schema-per-tool vs shared raw schema** | Migration touches every adapter, every grant, every audit log entry referencing schema. | Schema-per-tool. |
-| **Single SQL DB vs split DBs for raw/ai** | Cross-DB joins force ETL to be cross-DB; doubles operational surface. | Single DB, schema isolation. (Aligns with Constraint.) |
-| **Salt service as separate component vs SQL function** | If you start with SQL function, every component that touched salts has to be migrated; salt access auditing has no chokepoint. | Separate microservice, separate Key Vault, separate identity. |
-| **HMAC vs random pseudonyms** | Random pids cannot be re-derived; cross-tool reconciliation breaks if you can't re-HMAC. | HMAC with per-tenant salt. (Already in PROJECT.md.) |
-| **Audit chain format** | Retroactively re-chaining historical events is ~impossible without invalidating all prior signatures. | Chain format = `event_json + sha256(prior_chain_hash)`, locked day 1. |
-| **Field-class registry as source of truth** | Re-tagging columns later requires re-running every CI test against all historical violations. | Registry exists Day 1, CI gate enforces from first PR. |
-| **Eight transformation primitives** | Adding a 9th primitive is fine; redefining existing ones forces every tool's ETL recipe to be re-validated. | Lock the eight in Block B. |
-| **Four AI-zone shapes** | Adding a 5th is high cost (every agent's tool list changes). | Lock the four in Block B. (Already in PROJECT.md.) |
-| **Identifier hierarchy (tenant_id, cw_company_id, serial_number, person_pid)** | Adding a new identifier later means every shape, every typed function, every audit log entry has a new field. | Locked. (Already in PROJECT.md.) |
-| **Per-service managed identity topology** | Identity changes ripple through grants, RLS, audit logs, Drata mappings. | Locked Day 1: etl, salt, tool, gateway, dispatcher, audit-writer, admin. |
-| **WORM container retention period** | Cannot be shortened once locked (that's the point). Set too long = pay forever for old data. | 6 years for HIPAA-tagged-customer events; 13 months for non-HIPAA. Daily rotation; per-day container isolates the policy choice. |
-
-### Decisions That Can Iterate
-
-These can change without retroactive cost.
-
-- AI-zone refresh cadence per shape.
-- Specific gateway scrubbing regex set (additive).
-- Adapter language per tool.
-- Drata vs Vanta (re-mapping work, not architecture).
-- Whether `customer_memory` is JSON-in-SQL or separate (revisit on agent demand).
-- Specific RLS predicate logic (tweakable as access patterns evolve).
-
----
-
-## Recommendations Where PROJECT.md Leaves Architectural Choice Open
-
-The user asked for explicit recommendations on the open questions. Summarized:
-
-1. **Sync layer**: Pluggable adapter pattern with shared scheduler (one base class, per-tool config + hooks). NOT one bespoke worker per tool. Retry/DLQ/rate-limit live in the adapter base class + Service Bus DLQ. Adapters deploy as Container Apps Jobs.
-2. **Raw zone**: Schema-per-tool. Reasons enumerated in Anti-Pattern 1 above.
-3. **Pseudonymization**: Runs in ETL (not in views). Salt service is a separate microservice with its own identity and Key Vault. Cross-tool reconciliation via deterministic HMAC on `(tenant, email_lower)` — never an LLM.
-4. **AI zone**: Mix — indexed views for hot simple shapes (`customer_snapshot`), refreshed tables for heavier shapes (`customer_features_*`, `timeseries_aggregate`, `customer_memory`). Refresh cadence: 15 min hot, hourly cold, on-event for memory.
-5. **Typed tool function layer**: Azure Data API Builder for the read 80%, custom FastAPI/.NET service for the action-emission and orchestrating 20%. Both in same VNet. Anthropic calls them via the gateway as tools.
-6. **AI gateway**: Build, don't buy. Small owned service (~1-2k LOC). LiteLLM/Portkey/APIM are wrong fit because the requirements are HIPAA audit chain integration, domain-specific canary detection, and per-tenant per-class opt-out — all custom enough that off-the-shelf adds adapters rather than removing work.
-7. **Identity boundary**: Six managed identities (etl, salt, tool, gateway, dispatcher, audit-writer) plus admin via Entra PIM. Three Key Vaults (salt, cmk, api). VNet-isolated. Private endpoints for SQL. Egress allowlist on agent VNet (gateway, SQL, storage only).
-8. **Compliance plane**: Drata or Vanta connects via read-only managed identity. They consume from Sentinel + Azure resource graph. Evidence is *written* by Barycenter components into audit + Sentinel; Drata/Vanta only *reads*. Decision between Drata/Vanta deferrable to operations preference (both work; Drata depth, Vanta breadth).
+- [x] All five defense layers explicitly mapped to specific components ([Defense-Layer Map](#defense-layer-map))
+- [x] FortiGate placement and UDR configuration concrete (subnet table + UDR table + policy table)
+- [x] Identity consolidation blast-radius analysis honest (worst case: etl-identity compromise = salt access; mitigation: KV diagnostic logging)
+- [x] Owned gateway middleware order argued (each step justified; auth-first, budget-cheap, scan-before-LLM, audit-async-last)
+- [x] Salt service simplification decision argued with HIPAA risk assessment (reasonable-and-appropriate framing; revisit triggers identified)
+- [x] Build order explicit and dependency-correct (4 phases; lock-early decisions called out per phase)
+- [x] Total design under $200/mo (rolled up to ~$146–153/mo with ~$50 headroom)
 
 ---
 
 ## Sources
 
-**Azure SQL & Data API Builder (HIGH confidence — official Microsoft Learn):**
-- [Implement row-level security with session context — Data API Builder | Microsoft Learn](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/row-level-security)
-- [SQL MCP Server overview | Microsoft Learn](https://learn.microsoft.com/en-us/azure/data-api-builder/mcp/overview)
-- [Always Encrypted cryptography — SQL Server | Microsoft Learn](https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/always-encrypted-cryptography?view=sql-server-ver16)
-- [Always Encrypted — SQL Server | Microsoft Learn](https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/always-encrypted-database-engine?view=sql-server-ver17)
-- [Performance tuning with materialized views — Azure Synapse Analytics | Microsoft Learn](https://learn.microsoft.com/en-us/azure/synapse-analytics/sql/develop-materialized-view-performance-tuning)
-- [Virtual network endpoints and rules for databases — Azure SQL Database | Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-sql/database/vnet-service-endpoint-rule-overview?view=azuresql)
-- [ELT design pattern — Azure Synapse Analytics | Azure Docs](https://docs.azure.cn/en-us/synapse-analytics/sql-data-warehouse/design-elt-data-loading)
-- [ETL — Azure Architecture Center | Microsoft Learn](https://learn.microsoft.com/en-us/azure/architecture/data-guide/relational-data/etl)
+Carried forward from initial research (still authoritative):
 
-**Compute and orchestration (HIGH confidence — official Microsoft Learn):**
-- [Azure Functions on Azure Container Apps overview | Microsoft Learn](https://learn.microsoft.com/en-us/azure/container-apps/functions-overview)
-- [Comparing Container Apps with other Azure container options | Microsoft Learn](https://learn.microsoft.com/en-us/azure/container-apps/compare-options)
-- [Rethinking Background Workloads with Azure Functions on Azure Container Apps | Microsoft Community Hub](https://techcommunity.microsoft.com/blog/appsonazureblog/rethinking-background-workloads-with-azure-functions-on-azure-container-apps/4496861)
-- [Azure Functions Error Handling and Retry Guidance | Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-error-pages)
+**Azure SQL & Networking (HIGH — Microsoft Learn):**
+- https://learn.microsoft.com/en-us/azure/azure-sql/database/private-endpoint-overview
+- https://learn.microsoft.com/en-us/azure/azure-sql/database/serverless-tier-overview
+- https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/always-encrypted-database-engine
+- https://learn.microsoft.com/en-us/azure/virtual-network/virtual-networks-udr-overview
 
-**Storage immutability and audit (HIGH confidence — official Microsoft Learn):**
-- [Overview of immutable storage for blob data — Azure Storage | Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/blobs/immutable-storage-overview)
-- [Computer Forensics Chain of Custody in Azure | Microsoft Learn](https://learn.microsoft.com/en-us/azure/architecture/example-scenario/forensics/)
-- [Immutable Blobs Inside Azure Storage (WORM) | Microsoft Community Hub](https://techcommunity.microsoft.com/blog/coreinfrastructureandsecurityblog/immutable-blobs-inside-azure-storage-worm/3843611)
+**Container Apps & Functions (HIGH — Microsoft Learn):**
+- https://learn.microsoft.com/en-us/azure/container-apps/networking
+- https://learn.microsoft.com/en-us/azure/container-apps/jobs
+- https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets
 
-**Data architecture patterns (MEDIUM — community best practice + Microsoft Learn):**
-- [What is the medallion lakehouse architecture? — Azure Databricks | Microsoft Learn](https://learn.microsoft.com/en-us/azure/databricks/lakehouse/medallion)
-- [Prepare your data for GDPR compliance — Azure Databricks | Microsoft Learn](https://learn.microsoft.com/en-us/azure/databricks/security/privacy/gdpr-delta)
-- [Using ETL Staging Tables — Tim Mitchell](https://www.timmitchell.net/post/2017/06/14/etl-staging-tables/)
-- [SQL Server ETL in 2026 — DEV Community](https://dev.to/kuznetsova/sql-server-etl-in-2026-what-actually-works-and-what-doesnt-4nab)
+**FortiGate on Azure (MEDIUM — Fortinet docs):**
+- https://docs.fortinet.com/document/fortigate-public-cloud/azure-administration-guide
+- https://docs.fortinet.com/document/fortigate-public-cloud/sdn-connector-azure
 
-**LLM gateway landscape (MEDIUM — multiple recent comparisons; product churn high):**
-- [HIPAA-Compliant AI: What Developers Need to Know | Aptible](https://www.aptible.com/hipaa/hipaa-compliant-ai)
-- [Top 5 LLM Gateways in 2026 | DEV Community](https://dev.to/varshithvhegde/top-5-llm-gateways-in-2026-a-deep-dive-comparison-for-production-teams-34d2)
-- [Best LiteLLM Alternative for Enterprises in 2026 | Maxim](https://www.getmaxim.ai/articles/best-litellm-alternative-for-enterprises-in-2026/)
-- [6 Best LLM Gateways in 2026 | TrueFoundry](https://www.truefoundry.com/blog/best-llm-gateways)
+**Storage WORM (HIGH — Microsoft Learn):**
+- https://learn.microsoft.com/en-us/azure/storage/blobs/immutable-storage-overview
 
-**Compliance automation (MEDIUM — vendor-aligned but consistent across sources):**
-- [Azure Integration Guide | Drata Help Center](https://help.drata.com/en/articles/5032404-azure-integration-guide)
-- [Vanta vs Drata: Complete 2026 Comparison | Comp AI](https://trycomp.ai/vanta-vs-drata)
+**Presidio (HIGH — Microsoft):**
+- https://microsoft.github.io/presidio/
 
-**ConnectWise (HIGH — vendor docs + community libraries):**
-- [ConnectWise Manage API Essential Guide | Rollout](https://rollout.com/integration-guides/connect-wise-manage/api-essentials)
-- [connectwise-rest npm](https://www.npmjs.com/package/connectwise-rest)
-- [ConnectWise PSA REST API Patterns | mcpmarket](https://mcpmarket.com/tools/skills/connectwise-psa-api-patterns)
+**Anthropic API + HIPAA (HIGH — vendor):**
+- https://www.anthropic.com/legal/baa
+- https://docs.anthropic.com/en/api/messages
 
 ---
-*Architecture research for: Barycenter (MSP operations data platform with two-zone Azure SQL + AI-safety boundaries)*
-*Researched: 2026-05-01*
+*Architecture (revised, simplified, FortiGate hub-and-spoke) for Barycenter*
+*Researched: 2026-05-01; revised 2026-05-02*
