@@ -29,7 +29,16 @@
   3. Every audit event written to Log Analytics carries a SHA-256 hash chained to the prior event and is mirrored to a WORM blob container whose 6-year retention policy is locked at container creation; a query against the audit log itself produces an audit-of-audit entry.
   4. All four managed identities (etl, platform, audit, admin) exist with no long-lived secrets; PIM JIT with dual-approval is the only path to `raw_*` access; main branch is protected with required signed commits and CI checks.
   5. Per-tenant HMAC salts live in Key Vault, accessed only by the etl identity via a sign operation (never returned in plaintext), and the BAA inventory document (Microsoft + Anthropic + ZDR confirmation) is committed to the repo.
-**Plans**: TBD
+**Plans**: 9 plans
+- [ ] 01-01-PLAN.md — Repo bootstrap + audit SDK skeleton + compliance scaffolding (Wave 0)
+- [ ] 01-02-PLAN.md — OIDC bootstrap (mi-bary-deploy + federated credentials) [checkpoint]
+- [ ] 01-03-PLAN.md — Identity Bicep (4 MIs + PIM eligibility for admin) (Wave 1)
+- [ ] 01-04-PLAN.md — Networking Bicep (hub + FortiGate + spoke + recursion-safe UDR + policies.json) (Wave 1)
+- [ ] 01-05-PLAN.md — Data Bicep (SQL Serverless + KV) + SQL schemas/grants/genesis seed + field-class registry (Wave 2)
+- [ ] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
+- [ ] 01-07-PLAN.md — Audit SDK implementation (TDD: chain + sinks + AuditClient.emit fail-closed) (Wave 3)
+- [ ] 01-08-PLAN.md — CI scripts + GitHub Actions workflows (VER-02, NETW-02, AUDIT-01, Pitfall-1 grants) (Wave 3)
+- [ ] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
 
 ### Phase 2: Tool Onboarding Framework + ConnectWise Manage
 **Goal**: The framework that all future tool integrations inherit from is operational and exercised end-to-end against ConnectWise Manage with bounded-PII data — proving CUI enforcement, body-stripping, schema-drift detection, and salt-based pseudonymization all hold in production conditions before higher-PII integrations land.
@@ -87,7 +96,7 @@ The phase ordering is not negotiable — reversing any of these breaks the archi
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Network & Data Foundations | 0/0 | Not started | — |
+| 1. Network & Data Foundations | 0/9 | Planned | — |
 | 2. Tool Onboarding + ConnectWise | 0/0 | Not started | — |
 | 3. Agent-Safe Access + Leak Test | 0/0 | Not started | — |
 | 4. Integrations 2/3 + Compliance | 0/0 | Not started | — |
