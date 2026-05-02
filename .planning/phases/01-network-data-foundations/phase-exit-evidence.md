@@ -49,23 +49,24 @@ remote: - 4 of 4 required status checks are expected.
 
 ### IDENT-01 — Conditional Access MFA
 
-- [ ] CA policy `bary-ca-mfa-all-users` exists and is enabled (state == "enabled", NOT "enabledForReportingButNotEnforced")
-- [ ] CA policy `bary-ca-fido2-privileged` exists and is enabled
-- [ ] Sign-in attempt without MFA was rejected (evidence: Sign-In log entry)
-- [ ] PIM activation attempt without FIDO2 was rejected (evidence: PIM activation request log)
-- [ ] Break-glass account exists with documented exclusion (UPN noted in `compliance/break-glass.md` — not in this file)
-
-**Status:** PENDING — requires Entra Conditional Access Administrator or Security Administrator role.
-See `compliance/runbooks/conditional-access-mfa.md` for full creation instructions.
+- [x] CA policy `bary-ca-mfa-all-users` exists and is enabled — id: f587311c-56ea-4a4f-953c-649e31df2e2d
+- [x] CA policy `bary-ca-fido2-privileged` exists and is enabled — id: 4dff170a-8736-491f-820c-24e3fd8d9184
+- [ ] Sign-in attempt without MFA was rejected (evidence: Sign-In log entry) — verify via Entra Sign-In logs
+- [ ] PIM activation attempt without FIDO2 was rejected (evidence: PIM activation request log) — verify after infra deployment
+- [ ] Break-glass account exists with documented exclusion (UPN noted in `compliance/break-glass.md`) — pending
 
 **Evidence:**
 
 ```
-[pending — paste az rest table output once policies created]
+Name                   State
+---------------------  -------
+bary-ca-mfa-all-users  enabled   (id: f587311c-56ea-4a4f-953c-649e31df2e2d)
+bary-ca-fido2-privileged  enabled  (id: 4dff170a-8736-491f-820c-24e3fd8d9184)
+Created 2026-05-02 by craigadmin@gogravity.net
 ```
 
 ```
-[pending — paste sign-in log / PIM activation log filenames or excerpts here]
+[sign-in rejection log + PIM activation log — pending first user sign-in and infra deployment]
 ```
 
 ### COMP-06 — BAA inventory
