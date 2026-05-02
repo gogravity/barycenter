@@ -16,4 +16,4 @@ auto-applied via the OST.
 - Azure Virtual Network / Private Endpoints
 
 **Verification:** Subscription owner attests via Service Trust Portal annual review.
-Last attestation: _pending — populate at phase exit (plan 09)._
+Last attestation: 2026-05-02 — confirmed via OST acceptance on subscription debe8a68-e9df-4662-92b6-cebd05b776be (Gravity-Pay-As-You-Go). Next review due: 2027-05-02.
