@@ -38,7 +38,7 @@
 - [x] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
 - [x] 01-07-PLAN.md — Audit SDK implementation (TDD: chain + sinks + AuditClient.emit fail-closed) (Wave 3)
 - [x] 01-08-PLAN.md — CI scripts + GitHub Actions workflows (VER-02, NETW-02, AUDIT-01, Pitfall-1 grants) (Wave 3)
-- [ ] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
+- [x] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
 
 ### Phase 2: Tool Onboarding Framework + ConnectWise Manage
 **Goal**: The framework that all future tool integrations inherit from is operational and exercised end-to-end against ConnectWise Manage with bounded-PII data — proving CUI enforcement, body-stripping, schema-drift detection, and salt-based pseudonymization all hold in production conditions before higher-PII integrations land.
