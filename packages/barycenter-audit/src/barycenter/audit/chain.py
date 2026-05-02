@@ -40,13 +40,67 @@ def compute_digest(prior_hex: str, canonical: str) -> str:
 
 
 def read_head_locked(cursor) -> str:
-    """SELECT head_digest FROM audit.chain_state WITH (UPDLOCK, ROWLOCK).
+    """SELECT head_digest FROM audit.chain_state WITH (UPDLOCK, ROWLOCK) WHERE id=1.
 
-    Implemented in plan 07 task 2.
+    Returns the singleton chain head as a 64-char hex string. Holds the row
+    lock until the surrounding transaction commits or rolls back, serializing
+    concurrent emits (T-1-07-07 accept).
     """
-    raise NotImplementedError("Implemented in plan 07 task 2")
+    cursor.execute(
+        "SELECT head_digest FROM audit.chain_state WITH (UPDLOCK, ROWLOCK) WHERE id = 1"
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError(
+            "audit.chain_state row id=1 missing — genesis seed not applied"
+        )
+    return row[0]
 
 
 def update_head(cursor, new_digest: str) -> None:
-    """UPDATE audit.chain_state SET head_digest = ?. Implemented in plan 07 task 2."""
-    raise NotImplementedError("Implemented in plan 07 task 2")
+    """UPDATE audit.chain_state SET head_digest = ? WHERE id = 1.
+
+    Asserts ``rowcount == 1`` — chain_state is a singleton; any other count
+    means a schema invariant has been violated and we MUST fail closed.
+    """
+    cursor.execute(
+        "UPDATE audit.chain_state SET head_digest = ?, updated_at = SYSUTCDATETIME(), "
+        "updated_by = SYSTEM_USER WHERE id = 1",
+        new_digest,
+    )
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"chain_state UPDATE rowcount={cursor.rowcount}; expected exactly 1"
+        )
+
+
+def validate_chain(canonical_entries: list[str]) -> int:
+    """Recompute the chain from GENESIS_HASH and verify each entry.
+
+    ``canonical_entries`` is an ordered list of canonical-JSON strings, each
+    representing a stored AuditEvent (including its ``this_digest`` field).
+    Returns the number of validated entries on success; raises
+    ``ChainIntegrityError`` on the first prior- or this-digest mismatch.
+    """
+    prior = GENESIS_HASH
+    count = 0
+    for raw in canonical_entries:
+        data = json.loads(raw)
+        claimed_prior = data.get("prior_digest")
+        claimed_this = data.get("this_digest")
+        if claimed_prior != prior:
+            raise ChainIntegrityError(
+                f"entry {count} prior_digest mismatch: "
+                f"claimed {claimed_prior!r}, expected {prior!r}"
+            )
+        payload_no_self = {k: v for k, v in data.items() if k != "this_digest"}
+        canonical_no_self = canonicalize_json(payload_no_self)
+        recomputed = compute_digest(prior, canonical_no_self)
+        if recomputed != claimed_this:
+            raise ChainIntegrityError(
+                f"entry {count} this_digest mismatch: "
+                f"claimed {claimed_this!r}, recomputed {recomputed!r}"
+            )
+        prior = claimed_this
+        count += 1
+    return count
