@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Iterable
 
 from barycenter.audit._canonicalize import canonicalize
 from barycenter.audit.exceptions import ChainIntegrityError
@@ -74,20 +74,32 @@ def update_head(cursor, new_digest: str) -> None:
         )
 
 
-def validate_chain(canonical_entries: list[str]) -> int:
+def validate_chain(canonical_entries: Iterable[str]) -> int:
     """Recompute the chain from GENESIS_HASH and verify each entry.
 
-    ``canonical_entries`` is an ordered list of canonical-JSON strings, each
+    ``canonical_entries`` is an ordered iterable of canonical-JSON strings, each
     representing a stored AuditEvent (including its ``this_digest`` field).
-    Returns the number of validated entries on success; raises
-    ``ChainIntegrityError`` on the first prior- or this-digest mismatch.
+    Blank/whitespace-only lines are skipped. Returns the number of validated
+    entries on success; raises ``ChainIntegrityError`` on the first mismatch or
+    malformed entry.
     """
     prior = GENESIS_HASH
     count = 0
     for raw in canonical_entries:
-        data = json.loads(raw)
+        if not raw or not raw.strip():
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ChainIntegrityError(f"entry {count}: invalid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise ChainIntegrityError(f"entry {count}: not a JSON object")
         claimed_prior = data.get("prior_digest")
         claimed_this = data.get("this_digest")
+        if claimed_prior is None or claimed_this is None:
+            raise ChainIntegrityError(
+                f"entry {count}: missing prior_digest or this_digest"
+            )
         if claimed_prior != prior:
             raise ChainIntegrityError(
                 f"entry {count} prior_digest mismatch: "

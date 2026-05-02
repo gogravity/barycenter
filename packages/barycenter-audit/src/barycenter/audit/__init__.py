@@ -2,10 +2,10 @@
 from barycenter.audit.client import AuditClient
 from barycenter.audit.models import AuditEvent, AuditOutcome, ActorType
 from barycenter.audit.exceptions import AuditEmitError, ChainIntegrityError, FailClosedAbort
-from barycenter.audit.chain import GENESIS_HASH
+from barycenter.audit.chain import GENESIS_HASH, canonicalize_json, compute_digest, validate_chain
 
 __all__ = [
     "AuditClient", "AuditEvent", "AuditOutcome", "ActorType",
     "AuditEmitError", "ChainIntegrityError", "FailClosedAbort",
-    "GENESIS_HASH",
+    "GENESIS_HASH", "canonicalize_json", "compute_digest", "validate_chain",
 ]

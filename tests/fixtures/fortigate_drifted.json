@@ -1,0 +1,56 @@
+{
+  "policies": [
+    {
+      "name": "services-to-source-tools-deny",
+      "action": "deny",
+      "src_addr": [
+        "services-subnet"
+      ],
+      "dst_addr": [
+        "cw-manage"
+      ]
+    },
+    {
+      "name": "services-to-anthropic-allow",
+      "action": "deny",
+      "src_addr": [
+        "services-subnet"
+      ],
+      "dst_addr": [
+        "anthropic-api"
+      ]
+    },
+    {
+      "name": "etl-to-source-tools-allow",
+      "action": "accept",
+      "src_addr": [
+        "etl-subnet"
+      ],
+      "dst_addr": [
+        "cw-manage"
+      ]
+    },
+    {
+      "name": "spoke-to-azure-mgmt-allow",
+      "action": "accept",
+      "src_addr": [
+        "etl-subnet",
+        "services-subnet"
+      ],
+      "dst_addr": [
+        "azure-arm",
+        "azure-monitor"
+      ]
+    },
+    {
+      "name": "default-deny-all",
+      "action": "deny",
+      "src_addr": [
+        "all"
+      ],
+      "dst_addr": [
+        "all"
+      ]
+    }
+  ]
+}

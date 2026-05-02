@@ -1,0 +1,56 @@
+name: infra-drift
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RG_DEV: rg-barycenter-dev
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_WHATIF_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: install
+        run: |
+          pip install -r scripts/ci/requirements.txt
+          pip install -e packages/barycenter-audit
+      - name: bicep what-if drift
+        env:
+          RG_IDENTITY: rg-barycenter-identity
+        run: |
+          # Identity module deploys to RG_IDENTITY; the others to RG_DEV (per dependency
+          # graph and infra-deploy.yml). Routing them all to $RG_DEV would produce
+          # wrong-RG errors for identity.
+          for f in infra/*/main.bicep; do
+            module_name=$(basename $(dirname "$f"))
+            if [ "$module_name" = "identity" ]; then
+              rg=$RG_IDENTITY
+            else
+              rg=$RG_DEV
+            fi
+            echo "::group::what-if $f (rg=$rg)"
+            az deployment group what-if -g "$rg" -f "$f" || echo "::warning::drift detected in $f"
+            echo "::endgroup::"
+          done
+      - name: fortigate drift (NETW-02)
+        env:
+          KEY_VAULT_NAME: kv-bary-dev
+          FORTIGATE_MGMT_HOST: ${{ vars.FORTIGATE_MGMT_HOST }}
+        run: python scripts/ci/fortigate_drift.py
+      - name: grant drift (Pitfall 1)
+        env:
+          SQL_SERVER_FQDN: sql-bary-dev.database.windows.net
+        run: python scripts/ci/grant_drift_check.py

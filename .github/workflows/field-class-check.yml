@@ -1,0 +1,23 @@
+name: field-class-check
+on:
+  pull_request:
+    paths: [ 'sql/**', 'compliance/field-class-registry.yaml', '.github/workflows/field-class-check.yml' ]
+  push:
+    branches: [ main ]
+    paths: [ 'sql/**', 'compliance/field-class-registry.yaml' ]
+
+permissions:
+  contents: read
+
+jobs:
+  ver-02-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r scripts/ci/requirements.txt
+      - name: VER-02 static check
+        run: python scripts/ci/field_class_check.py --check-static
+      - name: VER-02 self-test (gate fires on untagged)
+        run: python scripts/ci/field_class_check.py --simulate-untagged
