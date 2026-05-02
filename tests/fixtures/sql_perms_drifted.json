@@ -1,0 +1,266 @@
+[
+  {
+    "principal": "mi-bary-etl",
+    "schema": "raw_cw",
+    "permission": "SELECT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "raw_cw",
+    "permission": "INSERT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "raw_cw",
+    "permission": "UPDATE",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "raw_cw",
+    "permission": "DELETE",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "ai_zone",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "ai_zone",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "ai_zone",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "ai_zone",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "audit",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "audit",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "audit",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "audit",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "audit.chain_state",
+    "permission": "SELECT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "audit.chain_state",
+    "permission": "UPDATE",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "raw_cw",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "raw_cw",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "raw_cw",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "raw_cw",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "ai_zone",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "ai_zone",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "ai_zone",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "ai_zone",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "pseudo",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "pseudo",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "pseudo",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-audit",
+    "schema": "pseudo",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "ai_zone",
+    "permission": "SELECT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "raw_cw",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "raw_cw",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "raw_cw",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "raw_cw",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "audit",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "audit",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "audit",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "audit",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "pseudo",
+    "permission": "SELECT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "pseudo",
+    "permission": "INSERT",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "pseudo",
+    "permission": "UPDATE",
+    "state": "DENY"
+  },
+  {
+    "principal": "mi-bary-platform",
+    "schema": "pseudo",
+    "permission": "DELETE",
+    "state": "DENY"
+  },
+  {
+    "principal": "intern.alice@gravity.com",
+    "schema": "raw_cw",
+    "permission": "SELECT",
+    "state": "GRANT"
+  }
+]
