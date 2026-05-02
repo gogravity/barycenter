@@ -7,33 +7,44 @@
 
 ## Plan completion checklist
 
-- [ ] Plan 01: Repo bootstrap + audit SDK skeleton committed
-- [ ] Plan 02: OIDC bootstrap evidence file committed
-- [ ] Plan 03: 4 MIs deployed; admin has zero standing grants (verified by integration test)
-- [ ] Plan 04: Hub + FortiGate + spoke deployed; FortiOS config-as-code matches policies.json
-- [ ] Plan 05: SQL + KV + PEs deployed; schemas + grants + chain genesis seeded; field-class registry seeded
-- [ ] Plan 06: LA + WORM (locked at 6yr) + DCR + diagnostic settings deployed
-- [ ] Plan 07: Audit SDK fully implemented; all unit tests pass; live e2e test green in CI
-- [ ] Plan 08: All 5 GitHub Actions workflows green; self-tests pass; nightly drift jobs green for 1 night minimum
+- [x] Plan 01: Repo bootstrap + audit SDK skeleton committed
+- [x] Plan 02: OIDC bootstrap evidence file committed
+- [x] Plan 03: 4 MIs deployed; admin has zero standing grants (verified by integration test)
+- [x] Plan 04: Hub + FortiGate + spoke deployed; FortiOS config-as-code matches policies.json
+- [x] Plan 05: SQL + KV + PEs deployed; schemas + grants + chain genesis seeded; field-class registry seeded
+- [x] Plan 06: LA + WORM (locked at 6yr) + DCR + diagnostic settings deployed
+- [x] Plan 07: Audit SDK fully implemented; all unit tests pass; live e2e test green in CI
+- [x] Plan 08: All 5 GitHub Actions workflows green; self-tests pass; nightly drift jobs green for 1 night minimum
 
 ## Live verification checklist (this plan)
 
 ### IDENT-04 — Branch protection
 
-- [ ] `gh api repos/gravity/barycenter/branches/main/protection` returns `enforce_admins.enabled: true`
-- [ ] All 4 required_status_checks present (what-if, ver-02-static, self-test, unit-tests)
-- [ ] `required_signatures.enabled: true`
-- [ ] `required_pull_request_reviews.require_code_owner_reviews: true`
-- [ ] Direct push as admin to main was attempted and REJECTED (one-time test, evidence: timestamp + GitHub error message)
+- [x] `gh api repos/gogravity/barycenter/branches/main/protection` returns `enforce_admins.enabled: true`
+- [x] All 4 required_status_checks present (what-if, ver-02-static, self-test, unit-tests)
+- [x] `required_signatures.enabled: true`
+- [x] `required_pull_request_reviews.require_code_owner_reviews: true`
+- [x] Direct push as admin to main was attempted and REJECTED (one-time test, evidence: timestamp + GitHub error message)
 
 **Evidence:**
 
-```
-[paste jq output here]
+```json
+{
+  "enforce_admins": true,
+  "signatures": true,
+  "contexts": ["what-if", "ver-02-static", "self-test", "unit-tests"],
+  "dismiss_stale": true,
+  "codeowner_review": true
+}
 ```
 
 ```
-[paste rejection message + timestamp here]
+2026-05-02 — direct push test (commit 97f465a):
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote: - Commits must have verified signatures.
+remote: - Changes must be made through a pull request.
+remote: - 4 of 4 required status checks are expected.
+! [remote rejected] HEAD -> main (protected branch hook declined)
 ```
 
 ### IDENT-01 — Conditional Access MFA
@@ -44,14 +55,17 @@
 - [ ] PIM activation attempt without FIDO2 was rejected (evidence: PIM activation request log)
 - [ ] Break-glass account exists with documented exclusion (UPN noted in `compliance/break-glass.md` — not in this file)
 
+**Status:** PENDING — requires Entra Conditional Access Administrator or Security Administrator role.
+See `compliance/runbooks/conditional-access-mfa.md` for full creation instructions.
+
 **Evidence:**
 
 ```
-[paste az rest table output here]
+[pending — paste az rest table output once policies created]
 ```
 
 ```
-[paste sign-in log / PIM activation log filenames or excerpts here]
+[pending — paste sign-in log / PIM activation log filenames or excerpts here]
 ```
 
 ### COMP-06 — BAA inventory
