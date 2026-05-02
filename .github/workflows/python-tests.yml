@@ -1,0 +1,34 @@
+name: python-tests
+on:
+  pull_request:
+    paths: [ 'packages/**', 'scripts/**', 'tests/**', '.github/workflows/python-tests.yml', 'pyproject.toml' ]
+  push:
+    branches: [ main ]
+    paths: [ 'packages/**', 'scripts/**', 'tests/**' ]
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: install
+        run: |
+          pip install -r scripts/ci/requirements.txt
+          pip install -e 'packages/barycenter-audit[dev]'
+      - name: pytest audit SDK
+        run: pytest packages/barycenter-audit/tests -q --ignore=packages/barycenter-audit/tests/integration
+      - name: VER-02 + AUDIT-01 self-tests
+        run: |
+          python scripts/ci/field_class_check.py --check-static
+          python scripts/ci/field_class_check.py --simulate-untagged
+          python scripts/ci/chain_validate.py --self-test
+          python scripts/ci/chain_validate.py --self-test --tampered
+          python scripts/ci/fortigate_drift.py --self-test
+          python scripts/ci/fortigate_drift.py --self-test --drifted
+          python scripts/ci/grant_drift_check.py --self-test
+          python scripts/ci/grant_drift_check.py --self-test --drifted

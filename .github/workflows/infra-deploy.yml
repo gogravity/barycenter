@@ -1,0 +1,86 @@
+name: infra-deploy
+on:
+  pull_request:
+    paths: [ 'infra/**', 'sql/**', '.github/workflows/infra-deploy.yml' ]
+  push:
+    branches: [ main ]
+    paths: [ 'infra/**', 'sql/**' ]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write   # to comment with what-if output
+
+env:
+  RG_DEV: rg-barycenter-dev
+  RG_IDENTITY: rg-barycenter-identity
+
+jobs:
+  what-if:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_WHATIF_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: az bicep build (lint all modules)
+        run: |
+          for f in infra/*/main.bicep; do
+            echo "::group::bicep build $f"
+            az bicep build --file "$f"
+            echo "::endgroup::"
+          done
+      - name: what-if identity
+        run: az deployment group what-if -g $RG_IDENTITY -f infra/identity/main.bicep -p infra/identity/main.dev.bicepparam
+      - name: what-if networking
+        run: az deployment group what-if -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
+      - name: what-if data
+        run: az deployment group what-if -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam
+      - name: what-if audit
+        run: az deployment group what-if -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Order: identity → networking → data → audit (per dependency graph)
+      - name: deploy identity
+        id: identity
+        run: |
+          az deployment group create -g $RG_IDENTITY -f infra/identity/main.bicep -p infra/identity/main.dev.bicepparam --query properties.outputs -o json > /tmp/identity-outputs.json
+          echo "ETL_PRINCIPAL_ID=$(jq -r .etlPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "PLATFORM_PRINCIPAL_ID=$(jq -r .platformPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "AUDIT_PRINCIPAL_ID=$(jq -r .auditPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "ADMIN_PRINCIPAL_ID=$(jq -r .adminPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+      - name: deploy networking
+        run: az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
+      - name: deploy data
+        id: data
+        run: |
+          az deployment group create -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam --query properties.outputs -o json > /tmp/data-outputs.json
+          echo "SQL_SERVER_ID=$(jq -r .sqlServerId.value /tmp/data-outputs.json)" >> $GITHUB_ENV
+          echo "SQL_DATABASE_ID=$(jq -r .databaseId.value /tmp/data-outputs.json 2>/dev/null || echo '')" >> $GITHUB_ENV
+          echo "KEY_VAULT_ID=$(jq -r .keyVaultId.value /tmp/data-outputs.json)" >> $GITHUB_ENV
+          echo "KEY_VAULT_NAME=$(jq -r .keyVaultId.value /tmp/data-outputs.json | awk -F/ '{print $NF}')" >> $GITHUB_ENV
+      - name: deploy audit
+        id: audit
+        run: |
+          az deployment group create -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam --query properties.outputs -o json > /tmp/audit-outputs.json
+          echo "DCE_LOGS_INGESTION_ENDPOINT=$(jq -r .dceLogsIngestionEndpoint.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
+          echo "DCR_IMMUTABLE_ID=$(jq -r .dcrId.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
+          echo "WORM_STORAGE_ACCOUNT=$(jq -r .wormStorageAccountId.value /tmp/audit-outputs.json | awk -F/ '{print $NF}')" >> $GITHUB_ENV
+          echo "SQL_SERVER_FQDN=$(jq -r .sqlServerFqdn.value /tmp/data-outputs.json 2>/dev/null || echo 'sql-bary-dev.database.windows.net')" >> $GITHUB_ENV
+      - name: emit deploy outputs to workflow summary
+        run: |
+          echo "### Audit-module outputs captured for downstream jobs" >> $GITHUB_STEP_SUMMARY
+          echo "- DCE_LOGS_INGESTION_ENDPOINT, DCR_IMMUTABLE_ID, WORM_STORAGE_ACCOUNT exported to GITHUB_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "- Consumed by audit-chain-validate.yml live-validate job" >> $GITHUB_STEP_SUMMARY
