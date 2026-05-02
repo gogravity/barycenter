@@ -845,26 +845,55 @@ def test_fail_closed_on_la_outage(audit_client, mock_la):
 | A7 | YAML field-class registry is preferred over SQL extended properties | Pattern 5 | Marked as Claude's discretion in CONTEXT.md; trade-offs documented in §Alternatives Considered |
 | A8 | DCR + Logs Ingestion API supports the audit event schema with arbitrary `metadata` JSON column | Pitfall 9 | DCR allows `dynamic` columns in custom tables — verified per Microsoft docs `[CITED: learn.microsoft.com/azure/azure-monitor/essentials/data-collection-rule-overview]` |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four open questions resolved during planning iteration 1 (2026-05-02). Decisions recorded
+in plan-level frontmatter and threat models.
 
 1. **Will all four MIs sit in the same resource group as the resources they access, or in a dedicated identity RG?**
-   - What we know: Common pattern is dedicated `rg-barycenter-identity` so identity lifecycle is independent of data lifecycle.
-   - What's unclear: Whether RBAC role assignments cross-RG complicate `what-if` output.
-   - Recommendation: Dedicated `rg-barycenter-identity`. Document as a planning decision.
+   - **RESOLVED:** Dedicated `rg-barycenter-identity` for all four MIs + `mi-bary-deploy`.
+     Data + audit + networking resources go in `rg-barycenter-dev` (per env). Cross-RG role
+     assignments are scoped via `scope:` in Bicep — `what-if` handles this cleanly because
+     each module's deployment targets a single RG; cross-RG references appear only in role
+     assignment scope properties (already a stable Bicep pattern).
+   - **Recorded in:** plan 03 (identity module deploys to `rg-barycenter-identity`); plan 08
+     infra-deploy.yml uses `$RG_IDENTITY` for identity what-if/deploy and `$RG_DEV` for the
+     other three modules.
 
 2. **Is the audit SDK called from Bicep deployment scripts (e.g., to log infra changes) or only from runtime services?**
-   - What we know: HIPAA §164.312(b) covers PHI access — infra deploys don't access PHI directly.
-   - What's unclear: Whether there's value in chaining infra-deploy events into the same audit chain.
-   - Recommendation: No — keep infra-deploy logs in GitHub Actions audit + Azure Activity Log; the application-level chain is for PHI-access events only.
+   - **RESOLVED: No.** Infrastructure deployment events stay in GitHub Actions audit logs
+     + Azure Activity Log + the audit Resource Provider's own diagnostic settings. The
+     application-level SHA-256 chain (D-04, D-05) is reserved for PHI-access events
+     emitted by ETL, gateway, and admin tooling at runtime. This avoids contaminating the
+     PHI audit chain with infra noise and keeps `chain_state` write rate bounded.
+   - **Recorded in:** plan 07 audit SDK has no Bicep deploy-script integration; plan 06
+     diagnostic-settings module forwards SQL/KV/Storage management-plane logs to the same
+     LA workspace but as separate tables (not `AuditEvents_CL`).
 
 3. **How is the FortiGate license file delivered to the VM during Bicep deployment?**
-   - What we know: BYOL FortiGate accepts the license via `customData` (cloud-init equivalent) or post-deploy `execute restore license` via SSH.
-   - What's unclear: Storing the license file securely in Key Vault vs. CI secret vs. manual one-time install.
-   - Recommendation: Key Vault secret + Bicep `customData` reference. Plan-level decision.
+   - **RESOLVED:** Key Vault secret `fortigate-license` (created in plan 05 with
+     `attributes.enabled: false` placeholder) + post-deploy script that retrieves the
+     secret via the FortiGate VM's system-assigned identity and applies it via FortiOS
+     REST API `execute restore license`. The `customData` cloud-init path is NOT used
+     because (a) cloud-init on FortiGate-VM is undocumented for license bootstrap and
+     (b) putting the license in customData makes it visible in deployment history. The
+     secret retrieval-and-apply happens once during Wave 0 manual procedure (documented
+     in plan 04 README + plan 09 phase exit checklist).
+   - **Recorded in:** plan 04 fortigate-vm.bicep uses MI assignment + KV secret reference;
+     plan 05 key-vault.bicep creates the placeholder secret with KV Secrets User role
+     for the FortiGate VM identity; plan 09 phase exit confirms license applied.
 
 4. **What is the bootstrap path for the very first deployment when `mi-bary-deploy` doesn't exist yet?**
-   - What we know: Chicken-and-egg — `mi-bary-deploy` is created by Bicep, but you need an identity to run Bicep.
-   - Recommendation: One-time bootstrap script (`scripts/deploy/bootstrap-oidc.sh`) run by a human admin via `az login` interactively, creating `mi-bary-deploy` + the federated credential + initial role assignments. After bootstrap, all subsequent deploys are CI-only.
+   - **RESOLVED:** One-time interactive bootstrap script `scripts/deploy/bootstrap-oidc.sh`
+     run by a human admin via `az login` (no MFA bypass; standard Entra MFA flow). The
+     script creates `rg-barycenter-identity`, `mi-bary-deploy`, the federated credential
+     for `repo:gravity/barycenter:ref:refs/heads/main`, the federated credential for
+     pull-request what-if (separate `mi-bary-whatif` per Pitfall 11), and minimal
+     Contributor role on `rg-barycenter-dev` + `rg-barycenter-identity`. After this
+     bootstrap, all subsequent deploys are CI-only via OIDC.
+   - **Recorded in:** plan 02 implements bootstrap-oidc.sh and produces
+     `oidc-bootstrap-evidence.md` capturing the resulting clientIds; plan 08 workflows
+     reference these IDs via `vars.AZURE_DEPLOY_CLIENT_ID` / `vars.AZURE_WHATIF_CLIENT_ID`.
 
 ## Sources
 
