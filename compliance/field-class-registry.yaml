@@ -16,3 +16,84 @@ schemas:
       ai_opt_out_classes:      INTERNAL
       synced_at:               INTERNAL
       source_etag:             INTERNAL
+    agreements:
+      agreement_id:            INTERNAL
+      cw_company_id:           INTERNAL
+      agreement_name:          PUBLIC
+      agreement_type_name:     PUBLIC
+      start_date:              PUBLIC
+      end_date:                PUBLIC
+      billing_cycle:           PUBLIC
+      monthly_value_cents:     PUBLIC
+      synced_at:               INTERNAL
+      source_etag:             INTERNAL
+    tickets:
+      ticket_id:               INTERNAL
+      cw_company_id:           INTERNAL
+      summary:                 SENSITIVE
+      status_name:             PUBLIC
+      priority_name:           PUBLIC
+      type_name:               PUBLIC
+      date_entered:            INTERNAL
+      last_updated:            INTERNAL
+      synced_at:               INTERNAL
+      source_etag:             INTERNAL
+    configurations:
+      configuration_id:        INTERNAL
+      cw_company_id:           INTERNAL
+      configuration_name:      PUBLIC
+      configuration_type_name: PUBLIC
+      manufacturer_name:       PUBLIC
+      model_number:            PUBLIC
+      serial_number:           INTERNAL  # stored as SHA-256 hash via configurations recipe (Plan 02-05)
+      status_name:             PUBLIC
+      installation_date:       INTERNAL
+      synced_at:               INTERNAL
+      source_etag:             INTERNAL
+    time_entries:
+      cw_company_id:           INTERNAL
+      entry_date:              INTERNAL
+      total_hours:             PUBLIC
+      billable_hours:          PUBLIC
+      entry_count:             PUBLIC
+      synced_at:               INTERNAL
+      source_etag:             INTERNAL
+  pseudo:
+    person_map:
+      tenant_id:               INTERNAL
+      email_lower:             RESTRICTED
+      person_pid:              SENSITIVE
+      salt_version:            INTERNAL
+      created_at:              INTERNAL
+      retired_at:              INTERNAL
+  ai_zone:
+    customer_snapshot:
+      cw_company_id:           INTERNAL
+      tier:                    PUBLIC
+      industry_bucket:         PUBLIC
+      employee_band:           PUBLIC
+      region:                  PUBLIC
+      lifecycle_stage:         PUBLIC
+      ai_opt_out:              PUBLIC
+      cui_flag:                PUBLIC
+      synced_at:               INTERNAL
+    customer_features_cw:
+      cw_company_id:           INTERNAL
+      open_ticket_count:       PUBLIC
+      avg_age_days_bucket:     PUBLIC
+      top_keyword_flags:       PUBLIC
+      time_entries_h_30d_bucket: PUBLIC
+      synced_at:               INTERNAL
+    timeseries_aggregate:
+      cw_company_id:           INTERNAL
+      month:                   PUBLIC
+      metric_name:             PUBLIC
+      value_bucketed:          PUBLIC
+      synced_at:               INTERNAL
+    customer_memory:
+      cw_company_id:           INTERNAL
+      memory_kind:             PUBLIC
+      summary_text:            PUBLIC
+      source_kind:             PUBLIC
+      last_observed_month:     PUBLIC
+      synced_at:               INTERNAL

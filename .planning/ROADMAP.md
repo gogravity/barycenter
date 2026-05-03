@@ -38,7 +38,7 @@
 - [x] 01-06-PLAN.md — Audit Bicep (LA + WORM-locked-6yr + DCR + diagnostic settings) (Wave 2)
 - [x] 01-07-PLAN.md — Audit SDK implementation (TDD: chain + sinks + AuditClient.emit fail-closed) (Wave 3)
 - [x] 01-08-PLAN.md — CI scripts + GitHub Actions workflows (VER-02, NETW-02, AUDIT-01, Pitfall-1 grants) (Wave 3)
-- [ ] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
+- [x] 01-09-PLAN.md — Phase exit: branch protection, MFA, BAA inventory, live deny verification [checkpoint] (Wave 4)
 
 ### Phase 2: Tool Onboarding Framework + ConnectWise Manage
 **Goal**: The framework that all future tool integrations inherit from is operational and exercised end-to-end against ConnectWise Manage with bounded-PII data — proving CUI enforcement, body-stripping, schema-drift detection, and salt-based pseudonymization all hold in production conditions before higher-PII integrations land.
@@ -50,7 +50,13 @@
   3. A CUI-flagged synthetic customer's data is verifiably reduced at sync time (no tickets, no asset details, `ai_opt_out=true` defaulted), and CUI canary phrases injected into ticket subjects, filenames, and attachments trigger detection and refuse the attachment.
   4. The four canonical AI-zone shapes (`customer_snapshot`, `customer_features_*`, `timeseries_aggregate`, `customer_memory`) are populated from CW data; an attempt to introduce a novel AI-zone table fails review/CI.
   5. The salt rotation runbook has been executed as a fire drill on a non-production tenant — versioned pepper IDs roll forward, downstream pseudonyms remain valid through the rotation window, and the procedure is committed to the repo.
-**Plans**: TBD
+**Plans**: 6 plans
+- [x] 02-01-PLAN.md — Wave 0 scaffold: barycenter-etl package, test stubs, compliance YAMLs, salt-runbook CI gate
+- [x] 02-02-PLAN.md — Eight TOOL-02 primitives + ETLRecipe + Pseudonymizer + ETL exception hierarchy (Wave 1)
+- [x] 02-03-PLAN.md — SQL DDL: raw_cw remaining tables (no body), pseudo.person_map, four ai_zone shapes; grants + field-class registry (Wave 1)
+- [x] 02-04-PLAN.md — Framework gates: CanaryScanner, CUIGate, ShapeBuilder, RetentionSweeper, SaltRotation, AdapterBase (Wave 2)
+- [x] 02-05-PLAN.md — ConnectWise adapter: client + auth + recipes + adapter + run.py + GH workflows (Wave 3)
+- [ ] 02-06-PLAN.md — Phase exit: CW credential setup + salt rotation fire drill [checkpoint] (Wave 4)
 
 ### Phase 3: Agent-Safe Access Layer + Leak Test
 **Goal**: The full five-layer defense is active: agents reach data only via typed functions, every LLM call is mediated by the owned gateway with input/output Presidio + canary scanning, communications go through a deterministic dispatcher, and a synthetic-marker leak test in CI fails any PR that breaches the boundary — all before any real agent connects.

@@ -1,0 +1,78 @@
+name: etl-retention-sweep
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 12:00 UTC, offset from 06:00 sync (Pitfall 10)
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    environment: prod   # env-scoped OIDC subject claim per Pitfall 11
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_ETL_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: install
+        run: |
+          pip install -r scripts/ci/requirements.txt
+          pip install -e 'packages/barycenter-audit'
+          pip install -e 'packages/barycenter-etl'
+
+      - name: run retention sweep (RET-01)
+        env:
+          KEY_VAULT_URL: ${{ vars.KEY_VAULT_URL }}
+          SQL_CONNECTION_STRING: ${{ vars.SQL_CONNECTION_STRING }}
+          DCE_LOGS_INGESTION_ENDPOINT: ${{ vars.DCE_LOGS_INGESTION_ENDPOINT }}
+          DCR_IMMUTABLE_ID: ${{ vars.DCR_IMMUTABLE_ID }}
+          WORM_APPEND_BLOB_URL: ${{ vars.WORM_APPEND_BLOB_URL }}
+        run: |
+          python - <<'PY'
+          import os, pyodbc, yaml
+          from azure.identity import DefaultAzureCredential
+          from azure.keyvault.secrets import SecretClient
+          from azure.monitor.ingestion import LogsIngestionClient
+          from azure.storage.blob import AppendBlobClient
+          from barycenter.audit import AuditClient
+          from barycenter.audit.sinks import LogsAnalyticsSink, WormBlobSink
+          from barycenter.etl.framework.retention import RetentionSweeper
+
+          cred = DefaultAzureCredential()
+          sql = pyodbc.connect(os.environ["SQL_CONNECTION_STRING"])
+          la = LogsAnalyticsSink(
+              LogsIngestionClient(endpoint=os.environ["DCE_LOGS_INGESTION_ENDPOINT"], credential=cred),
+              dcr_immutable_id=os.environ["DCR_IMMUTABLE_ID"],
+              stream_name=os.environ.get("DCR_STREAM_NAME", "Custom-AuditEvents_CL"),
+          )
+          worm = WormBlobSink(
+              AppendBlobClient.from_blob_url(os.environ["WORM_APPEND_BLOB_URL"], credential=cred),
+          )
+          audit = AuditClient(sql, la, worm)
+          sweeper = RetentionSweeper("compliance/retention-policy.yaml", sql, audit)
+          reg = yaml.safe_load(open("compliance/field-class-registry.yaml"))
+          tables_swept = set()
+          for schema, tables in (reg.get("schemas") or {}).items():
+              if schema in ("audit", "ai_zone"):
+                  continue
+              for tbl, cols in tables.items():
+                  qualified = f"{schema}.{tbl}"
+                  if qualified in tables_swept:
+                      continue
+                  classes = set(cols.values()) if isinstance(cols, dict) else set()
+                  if "RESTRICTED" in classes:
+                      n = sweeper.sweep_table(qualified, "RESTRICTED")
+                      print(f"swept {qualified}: {n} rows")
+                      tables_swept.add(qualified)
+          PY

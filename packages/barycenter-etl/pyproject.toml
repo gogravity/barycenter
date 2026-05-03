@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "barycenter-etl"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Tool onboarding framework + ConnectWise Manage adapter (Phase 2)"
+dependencies = [
+  "httpx>=0.28",
+  "tenacity>=9.1",
+  "pyodbc>=5.2",
+  "pydantic>=2.10",
+  "azure-identity>=1.19",
+  "azure-keyvault-secrets>=4.9",
+  "azure-keyvault-keys>=4.10",
+  "pyyaml>=6.0",
+  "barycenter-audit",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-mock>=3.14", "respx>=0.22", "freezegun>=1.5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/barycenter"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+barycenter-audit = { path = "../barycenter-audit", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

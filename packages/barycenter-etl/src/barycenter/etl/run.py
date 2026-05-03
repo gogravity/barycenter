@@ -1,0 +1,110 @@
+"""CLI entry: ``python -m barycenter.etl.run --adapter <name> [--dry-run]``.
+
+Wires Azure managed identity -> SQL + KV + audit -> CW client -> CWManageAdapter.run.
+Per D-08 this runs in GitHub Actions; per D-03 the OIDC federated credential on
+``mi-bary-etl`` is the auth path. Local dev uses DefaultAzureCredential as well.
+
+Dry-run mode prints the planned actions without importing Azure SDKs or pyodbc,
+so the workflow can exercise the entry point in CI without provisioning secrets.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import sys
+
+
+def _build_cw_adapter(audit, sql_conn, kv_client):
+    from barycenter.etl.adapters.connectwise.adapter import CWManageAdapter
+    from barycenter.etl.adapters.connectwise.auth import (
+        BasicAuthStrategy,
+        OAuthClientCredsStrategy,
+    )
+    from barycenter.etl.adapters.connectwise.client import CWManageClient
+
+    server_url = kv_client.get_secret("api-cw-server-url").value
+    auth_mode = (os.environ.get("CW_AUTH_MODE", "basic") or "basic").lower()
+    if auth_mode == "oauth":
+        client_id = kv_client.get_secret("api-cw-client-id").value
+        client_secret = kv_client.get_secret("api-cw-client-secret").value
+        token_endpoint = kv_client.get_secret("api-cw-token-endpoint").value
+        auth = OAuthClientCredsStrategy(token_endpoint, client_id, client_secret)
+    else:
+        company = kv_client.get_secret("api-cw-company").value
+        public_key = kv_client.get_secret("api-cw-public-key").value
+        private_key = kv_client.get_secret("api-cw-private-key").value
+        client_id = kv_client.get_secret("api-cw-client-id").value
+        auth = BasicAuthStrategy(company, public_key, private_key, client_id)
+    cw = CWManageClient(server_url, auth)
+    return CWManageAdapter(audit, sql_conn, kv_client, cw_client=cw)
+
+
+ADAPTERS = {"connectwise": _build_cw_adapter}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Barycenter ETL runner")
+    ap.add_argument("--adapter", required=True, choices=list(ADAPTERS))
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned actions without connecting to CW or SQL",
+    )
+    args = ap.parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    if args.dry_run:
+        print(f"DRY RUN: would invoke {args.adapter} adapter")
+        print(
+            "  TABLES: companies, agreements, tickets, configurations, time_entries"
+        )
+        print(f"  Auth mode: {os.environ.get('CW_AUTH_MODE', 'basic')}")
+        print(
+            "  Audit path: barycenter.audit.AuditClient.emit() (fail-closed)"
+        )
+        return 0
+
+    # Real path: import lazily so dry-run doesn't require Azure SDKs.
+    import pyodbc  # type: ignore[import-not-found]
+    from azure.identity import DefaultAzureCredential
+    from azure.keyvault.secrets import SecretClient
+
+    from barycenter.audit import AuditClient
+    from barycenter.audit.sinks import LogsAnalyticsSink, WormBlobSink
+
+    kv_url = os.environ["KEY_VAULT_URL"]
+    sql_conn_str = os.environ["SQL_CONNECTION_STRING"]
+    cred = DefaultAzureCredential()
+    kv = SecretClient(vault_url=kv_url, credential=cred)
+    sql = pyodbc.connect(sql_conn_str)
+
+    # Sink construction follows Phase 1 conventions: env-driven SDK clients
+    # injected into the thin sink wrappers. If a future ops change relocates
+    # these helpers, update here in coordination with barycenter-audit.
+    from azure.monitor.ingestion import LogsIngestionClient
+    from azure.storage.blob import AppendBlobClient
+
+    dce_endpoint = os.environ["DCE_LOGS_INGESTION_ENDPOINT"]
+    dcr_id = os.environ["DCR_IMMUTABLE_ID"]
+    stream = os.environ.get("DCR_STREAM_NAME", "Custom-AuditEvents_CL")
+    worm_url = os.environ["WORM_APPEND_BLOB_URL"]
+    la = LogsAnalyticsSink(
+        LogsIngestionClient(endpoint=dce_endpoint, credential=cred),
+        dcr_immutable_id=dcr_id,
+        stream_name=stream,
+    )
+    worm = WormBlobSink(AppendBlobClient.from_blob_url(worm_url, credential=cred))
+    audit = AuditClient(sql, la, worm)
+    adapter = ADAPTERS[args.adapter](audit, sql, kv)
+    results = adapter.run()
+    print(f"Results: {results}")
+    any_failed = any(v == "failed" for v in results.values())
+    return 1 if any_failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

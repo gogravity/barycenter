@@ -28,10 +28,10 @@
 
 ## GitHub repo variables set
 
-- AZURE_TENANT_ID — pending (repo gogravity/barycenter not yet created)
-- AZURE_SUBSCRIPTION_ID — pending
-- AZURE_DEPLOY_CLIENT_ID — pending
-- AZURE_WHATIF_CLIENT_ID — pending
+- AZURE_TENANT_ID ✓
+- AZURE_SUBSCRIPTION_ID ✓
+- AZURE_DEPLOY_CLIENT_ID ✓
+- AZURE_WHATIF_CLIENT_ID ✓
 
 Values ready to set once repo exists:
 ```
