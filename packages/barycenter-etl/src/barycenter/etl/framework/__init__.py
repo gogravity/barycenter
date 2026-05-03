@@ -11,7 +11,9 @@ from barycenter.etl.framework.recipe import ETLRecipe, iter_all_recipes
 from barycenter.etl.framework.canary import CanaryScanner
 from barycenter.etl.framework.cui_gate import CUIGate
 from barycenter.etl.framework.shape_builder import ShapeBuilder
-from barycenter.etl.framework.adapter_base import Category
+from barycenter.etl.framework.adapter_base import AdapterBase, Category
+from barycenter.etl.framework.retention import RetentionSweeper
+from barycenter.etl.framework.salt_rotation import SaltRotation, DualWriteResult
 
 __all__ = [
     "ETLRecipe",
@@ -20,6 +22,10 @@ __all__ = [
     "CUIGate",
     "ShapeBuilder",
     "Category",
+    "AdapterBase",
+    "RetentionSweeper",
+    "SaltRotation",
+    "DualWriteResult",
     "ETLError",
     "CUIBoundaryViolation",
     "SchemaDriftError",
