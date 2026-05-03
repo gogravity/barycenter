@@ -54,7 +54,7 @@
 - [x] 02-01-PLAN.md — Wave 0 scaffold: barycenter-etl package, test stubs, compliance YAMLs, salt-runbook CI gate
 - [x] 02-02-PLAN.md — Eight TOOL-02 primitives + ETLRecipe + Pseudonymizer + ETL exception hierarchy (Wave 1)
 - [x] 02-03-PLAN.md — SQL DDL: raw_cw remaining tables (no body), pseudo.person_map, four ai_zone shapes; grants + field-class registry (Wave 1)
-- [ ] 02-04-PLAN.md — Framework gates: CanaryScanner, CUIGate, ShapeBuilder, RetentionSweeper, SaltRotation, AdapterBase (Wave 2)
+- [x] 02-04-PLAN.md — Framework gates: CanaryScanner, CUIGate, ShapeBuilder, RetentionSweeper, SaltRotation, AdapterBase (Wave 2)
 - [ ] 02-05-PLAN.md — ConnectWise adapter: client + auth + recipes + adapter + run.py + GH workflows (Wave 3)
 - [ ] 02-06-PLAN.md — Phase exit: CW credential setup + salt rotation fire drill [checkpoint] (Wave 4)
 
