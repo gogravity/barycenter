@@ -26,6 +26,10 @@ from barycenter.etl.framework.exceptions import (
     PaginationTruncated,
 )
 from barycenter.etl.framework.pseudonymizer import Pseudonymizer
+from barycenter.etl.framework.canary import CanaryScanner
+from barycenter.etl.framework.cui_gate import CUIGate
+from barycenter.etl.framework.shape_builder import ShapeBuilder
+from barycenter.etl.framework.adapter_base import Category
 
 __all__ = [
     # primitives
@@ -43,6 +47,10 @@ __all__ = [
     # framework
     "ETLRecipe",
     "Pseudonymizer",
+    "CanaryScanner",
+    "CUIGate",
+    "ShapeBuilder",
+    "Category",
     # exceptions
     "ETLError",
     "CUIBoundaryViolation",
