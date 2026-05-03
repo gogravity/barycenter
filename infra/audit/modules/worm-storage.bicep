@@ -57,6 +57,8 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01
   parent: storageAccount
   name: 'default'
   properties: {
+    // Required for immutableStorageWithVersioning on the container (AUDIT-03).
+    isVersioningEnabled: true
     deleteRetentionPolicy: {
       enabled: false
     }
