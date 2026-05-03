@@ -18,7 +18,7 @@ import httpx
 from tenacity import (
     RetryError,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -28,6 +28,20 @@ from barycenter.etl.framework.exceptions import (
     PaginationTruncated,
     RateLimitExhausted,
 )
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """Return True only for errors worth retrying (transient conditions).
+
+    Permanent 4xx errors (401, 403, 404, 422, …) are not retried — a bad
+    credential or misconfigured path should fail immediately rather than
+    burning 5 attempts with exponential back-off.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (429, 500, 502, 503, 504)
+    return False
 
 
 @dataclass
@@ -88,9 +102,7 @@ class CWManageClient:
     @retry(
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=2, max=60),
-        retry=retry_if_exception_type(
-            (httpx.HTTPStatusError, httpx.TransportError)
-        ),
+        retry=retry_if_exception(_is_transient),
         reraise=True,
     )
     def _get(self, path: str, params: dict) -> httpx.Response:
