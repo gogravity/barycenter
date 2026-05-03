@@ -16,11 +16,14 @@ class PrimitiveResult:
     expr:        SQL expression fragment ('?' placeholder, static expr, or '' for drop).
     params:      Parameters dict to bind into the parameterized SQL.
     field_class: One of VALID_FIELD_CLASSES (RESTRICTED, SENSITIVE, INTERNAL, PUBLIC, DROPPED).
+    metadata:    Optional out-of-band data (e.g. salt_version for pseudonymize). Never
+                 bound as SQL parameters; callers may read for audit/logging purposes.
     """
 
     expr: str
     params: dict[str, Any] = field(default_factory=dict)
     field_class: str = "INTERNAL"
+    metadata: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.field_class not in VALID_FIELD_CLASSES:

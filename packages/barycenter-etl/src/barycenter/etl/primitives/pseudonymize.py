@@ -31,6 +31,9 @@ def pseudonymize(
     pid, ver = p.derive(email, tenant_id, salt_version)
     return PrimitiveResult(
         expr="?",
-        params={field: pid, f"{field}_salt_version": ver},
+        params={field: pid},
         field_class="SENSITIVE",
+        # salt version surfaced out-of-band; binding it as a SQL param
+        # would create a placeholder mismatch (one ? but two param entries).
+        metadata={"salt_version": ver},
     )
