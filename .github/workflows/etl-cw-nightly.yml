@@ -16,32 +16,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Authenticate as mi-bary-etl — has AcrPush on ACR + Contributor on CAJ.
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_ETL_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: install
-        run: |
-          pip install -r scripts/ci/requirements.txt
-          pip install -e 'packages/barycenter-audit'
-          pip install -e 'packages/barycenter-etl'
-
-      - name: run CW adapter
+      # Build image in ACR (no local Docker required). Tags with commit SHA for
+      # traceability; also overwrites :latest so the CAJ always pulls the current build.
+      - name: build and push image
         env:
-          KEY_VAULT_URL: ${{ vars.KEY_VAULT_URL }}
-          SQL_CONNECTION_STRING: ${{ vars.SQL_CONNECTION_STRING }}
-          CW_AUTH_MODE: ${{ vars.CW_AUTH_MODE }}
-          DCE_LOGS_INGESTION_ENDPOINT: ${{ vars.DCE_LOGS_INGESTION_ENDPOINT }}
-          DCR_IMMUTABLE_ID: ${{ vars.DCR_IMMUTABLE_ID }}
-          WORM_APPEND_BLOB_URL: ${{ vars.WORM_APPEND_BLOB_URL }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
         run: |
-          python -m barycenter.etl.run --adapter connectwise
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "barycenter-etl:${{ github.sha }}" \
+            --image "barycenter-etl:latest" \
+            --file packages/barycenter-etl/Dockerfile \
+            .
+
+      # Update the CAJ to pin the commit-SHA image, then start a single execution.
+      # The job runs inside the VNet so it can reach SQL, Key Vault, and WORM storage.
+      - name: trigger ETL job
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          az containerapp job update \
+            --name caj-bary-etl \
+            --resource-group rg-barycenter-dev \
+            --image "$ACR_NAME.azurecr.io/barycenter-etl:${{ github.sha }}"
+
+          EXECUTION_NAME=$(az containerapp job start \
+            --name caj-bary-etl \
+            --resource-group rg-barycenter-dev \
+            --query name -o tsv)
+          echo "EXECUTION_NAME=$EXECUTION_NAME" >> "$GITHUB_ENV"
+
+      # Poll every 30 s, timeout after 15 min. Mirrors the CAJ replicaTimeout of 900 s.
+      - name: wait for job completion
+        run: |
+          echo "Polling execution: $EXECUTION_NAME"
+          for i in $(seq 1 30); do
+            STATUS=$(az containerapp job execution show \
+              --name caj-bary-etl \
+              --resource-group rg-barycenter-dev \
+              --job-execution-name "$EXECUTION_NAME" \
+              --query properties.status -o tsv 2>/dev/null || echo "Unknown")
+            echo "  attempt $i: $STATUS"
+            if [[ "$STATUS" == "Succeeded" ]]; then
+              echo "ETL job succeeded"
+              exit 0
+            elif [[ "$STATUS" == "Failed" || "$STATUS" == "Stopped" ]]; then
+              echo "ETL job failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "ETL job timed out after 15 minutes"
+          exit 1
 
       - name: post-sync chain integrity check
         # TODO(2026-Q2): remove continue-on-error once chain_validate.py --live

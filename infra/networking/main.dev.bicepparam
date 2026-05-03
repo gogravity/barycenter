@@ -18,6 +18,10 @@ param spokeSubnets = [
   { name: 'data-subnet',     cidr: '10.20.0.128/27' }
   { name: 'pe-subnet',       cidr: '10.20.0.160/27' }
   { name: 'admin-subnet',    cidr: '10.20.1.0/27' }
+  // Container Apps Environment infrastructure subnet (Phase 03).
+  // /27 meets the workload-profiles minimum. Delegation skips FortiGate UDR
+  // so Container Apps control-plane management traffic egresses directly.
+  { name: 'jobs-subnet', cidr: '10.20.0.192/27', delegation: 'Microsoft.App/environments' }
 ]
 param tags = {
   project: 'barycenter'

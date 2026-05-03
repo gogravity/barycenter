@@ -97,7 +97,16 @@ def main(argv: list[str] | None = None) -> int:
         dcr_immutable_id=dcr_id,
         stream_name=stream,
     )
-    worm = WormBlobSink(AppendBlobClient.from_blob_url(worm_url, credential=cred))
+    # Ensure the append blob exists before the first write. create_append_blob()
+    # is idempotent when the blob already exists — ResourceExistsError is expected
+    # on every run after the first and is not a fault condition.
+    from azure.core.exceptions import ResourceExistsError
+    _worm_blob_client = AppendBlobClient.from_blob_url(worm_url, credential=cred)
+    try:
+        _worm_blob_client.create_append_blob()
+    except ResourceExistsError:
+        pass  # already exists — normal on every run after the first
+    worm = WormBlobSink(_worm_blob_client)
     audit = AuditClient(sql, la, worm)
     adapter = ADAPTERS[args.adapter](audit, sql, kv)
     results = adapter.run()
