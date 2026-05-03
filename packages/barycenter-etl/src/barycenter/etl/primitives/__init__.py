@@ -13,6 +13,7 @@ from barycenter.etl.primitives.bucket import bucket
 from barycenter.etl.primitives.score import score
 from barycenter.etl.primitives.keyword_flags import keyword_flags
 from barycenter.etl.primitives.as_is import as_is
+from barycenter.etl.primitives.any_keyword import any_keyword
 
 PRIMITIVE_REGISTRY = {
     "drop": drop,
@@ -23,6 +24,7 @@ PRIMITIVE_REGISTRY = {
     "score": score,
     "keyword_flags": keyword_flags,
     "as_is": as_is,
+    "any_keyword": any_keyword,
 }
 
 __all__ = [
@@ -37,4 +39,5 @@ __all__ = [
     "score",
     "keyword_flags",
     "as_is",
+    "any_keyword",
 ]

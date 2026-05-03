@@ -111,6 +111,8 @@ class ETLRecipe(BaseModel):
                 )
             elif primitive_name == "keyword_flags":
                 res = fn(col, value or "", kwargs.get("kw_dict", {}))
+            elif primitive_name == "any_keyword":
+                res = fn(col, value or "", kwargs.get("keywords", []))
             else:  # pragma: no cover - registry membership already validated
                 raise ValueError(f"unhandled primitive {primitive_name!r}")
 

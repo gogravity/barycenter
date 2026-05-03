@@ -18,7 +18,7 @@ def companies_recipe() -> ETLRecipe:
             "billing_address_line1":  ("as_is",         {"field": "addressLine1", "only_classes": ("RESTRICTED",), "field_class": "RESTRICTED"}),
             "billing_address_city":   ("as_is",         {"field": "city", "only_classes": ("PUBLIC", "INTERNAL", "SENSITIVE"), "field_class": "SENSITIVE"}),
             "billing_address_region": ("as_is",         {"field": "state", "only_classes": ("PUBLIC", "INTERNAL", "SENSITIVE"), "field_class": "SENSITIVE"}),
-            "cui_handling_required":  ("keyword_flags", {"field": "types[]", "kw_dict": {"defense": "1", "federal": "1"}}),
+            "cui_handling_required":  ("any_keyword",    {"field": "types[]", "keywords": ["defense", "federal"]}),
             "ai_opt_out":             ("as_is",         {"field": "customFields.ai_opt_out", "default": False, "field_class": "INTERNAL"}),
             "source_etag":            ("as_is",         {"field": "_info.lastUpdated", "field_class": "INTERNAL"}),
             # Body-like fields explicitly dropped:
