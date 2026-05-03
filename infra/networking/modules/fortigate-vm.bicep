@@ -1,10 +1,10 @@
-// FortiGate-VM02 BYOL on Standard_F2s_v2 — single-NVA hub design.
+// FortiGate-VM PAYG on Standard_F2s_v2 — single-NVA hub design.
+// Using PAYG image (fortinet_fg-vm_payg_2023) while BYOL license is pending.
+// Switch plan/sku back to fortinet_fg-vm once BYOL license is available.
 //
-// License install (`execute restore license`) is performed post-deploy by a CI
-// step that fetches KV secret 'fortigate-license' and pushes via az vm run-command
-// invoke. Bicep customData only handles hostname bootstrap; license install is too
-// long to fit in customData and would require plaintext exposure. The FortiGate
-// VM's system-assigned identity gets KV Secrets User on the KV in plan 05.
+// Auto-shutdown at 19:00 UTC daily via Microsoft.DevTestLab/schedules to
+// avoid PAYG charges outside business hours. Re-enable manually or extend
+// schedule when needed.
 //
 // Trust NIC IP is statically assigned because it is the next-hop in spoke UDRs.
 // Both NICs have enableIPForwarding=true so the FortiGate can transit non-local
@@ -16,8 +16,14 @@ param location string = resourceGroup().location
 @description('FortiGate VM name.')
 param vmName string = 'vm-fgt-bary-01'
 
-@description('VM SKU — Standard_F2s_v2 sized for FortiGate-VM02 BYOL.')
+@description('VM SKU — Standard_F2s_v2 sized for FortiGate-VM.')
 param vmSize string = 'Standard_F2s_v2'
+
+@description('Auto-shutdown time in HHmm UTC (e.g. 1900 = 7 PM UTC). Empty string disables.')
+param autoShutdownTime string = '1900'
+
+@description('Notification email for auto-shutdown warning. Empty string skips notification.')
+param autoShutdownNotificationEmail string = ''
 
 @description('Untrust subnet resource id (Internet-facing NIC lands here).')
 param untrustSubnetId string
@@ -97,7 +103,7 @@ resource fortigateVm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
     type: 'SystemAssigned'
   }
   plan: {
-    name: 'fortinet_fg-vm'
+    name: 'fortinet_fg-vm_payg_2023'
     product: 'fortinet_fortigate-vm_v5'
     publisher: 'fortinet'
   }
@@ -109,7 +115,7 @@ resource fortigateVm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
       imageReference: {
         publisher: 'fortinet'
         offer: 'fortinet_fortigate-vm_v5'
-        sku: 'fortinet_fg-vm'
+        sku: 'fortinet_fg-vm_payg_2023'
         version: 'latest'
       }
       osDisk: {
@@ -151,6 +157,26 @@ resource fortigateVm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
           }
         }
       ]
+    }
+  }
+}
+
+resource autoShutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = if (!empty(autoShutdownTime)) {
+  name: 'shutdown-computevm-${vmName}'
+  location: location
+  tags: tags
+  properties: {
+    status: 'Enabled'
+    taskType: 'ComputeVmShutdownTask'
+    dailyRecurrence: {
+      time: autoShutdownTime
+    }
+    timeZoneId: 'UTC'
+    targetResourceId: fortigateVm.id
+    notificationSettings: {
+      status: empty(autoShutdownNotificationEmail) ? 'Disabled' : 'Enabled'
+      timeInMinutes: 30
+      emailRecipient: autoShutdownNotificationEmail
     }
   }
 }
