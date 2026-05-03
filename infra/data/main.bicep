@@ -117,8 +117,9 @@ module kvPe 'modules/private-endpoint.bicep' = {
 }
 
 // Grants script depends on SQL + KV + both PEs because it must connect to SQL via the
-// private endpoint to apply DDL + grants.
-module grants 'modules/sql-grants-deploy-script.bicep' = {
+// private endpoint to apply DDL + grants. Skipped when scriptContainerSasUri is empty
+// (infra-only deploys that haven't staged the SQL blobs yet).
+module grants 'modules/sql-grants-deploy-script.bicep' = if (!empty(scriptContainerSasUri)) {
   name: 'sql-grants'
   params: {
     location: location

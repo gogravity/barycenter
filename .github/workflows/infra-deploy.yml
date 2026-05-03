@@ -65,11 +65,20 @@ jobs:
           echo "AUDIT_PRINCIPAL_ID=$(jq -r .auditPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "ADMIN_PRINCIPAL_ID=$(jq -r .adminPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
       - name: deploy networking
+        id: networking
         env:
           FGT_ADMIN_SSH_PUBLIC_KEY: ${{ vars.FGT_ADMIN_SSH_PUBLIC_KEY }}
-        run: az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
+        run: |
+          az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam --query properties.outputs -o json > /tmp/networking-outputs.json
+          SPOKE_VNET_ID=$(jq -r .spokeVnetId.value /tmp/networking-outputs.json)
+          echo "DATA_SUBNET_ID=${SPOKE_VNET_ID}/subnets/data-subnet" >> $GITHUB_ENV
+          echo "PE_SUBNET_ID=${SPOKE_VNET_ID}/subnets/pe-subnet" >> $GITHUB_ENV
       - name: deploy data
         id: data
+        env:
+          DEPLOY_PRINCIPAL_ID: ${{ vars.DEPLOY_PRINCIPAL_ID }}
+          SQL_ADMIN_GROUP_OBJECT_ID: ${{ vars.SQL_ADMIN_GROUP_OBJECT_ID }}
+          DEPLOY_IDENTITY_RESOURCE_ID: ${{ vars.DEPLOY_IDENTITY_RESOURCE_ID }}
         run: |
           az deployment group create -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam --query properties.outputs -o json > /tmp/data-outputs.json
           echo "SQL_SERVER_ID=$(jq -r .sqlServerId.value /tmp/data-outputs.json)" >> $GITHUB_ENV
