@@ -1,0 +1,18 @@
+# COMP-07: CUI canary detection. Loaded by barycenter.etl.framework.canary.CanaryScanner.
+# Phrases are case-insensitive regex-escaped at load time.
+# Update this file when authoritative CUI taxonomy changes; bump version on each edit.
+version: 1
+phrases:
+  - "CUI"
+  - "CONTROLLED UNCLASSIFIED INFORMATION"
+  - "FOUO"
+  - "FOR OFFICIAL USE ONLY"
+  - "FEDCON"
+  - "ITAR"
+  - "EAR99"
+  - "SECRET//NOFORN"
+  - "NOFORN"
+  - "CONFIDENTIAL//NOFORN"
+test_canaries:
+  # Per-customer test canaries injected by VER-01 fixtures (Phase 3) — kept here for one-place rotation.
+  - "BARYCENTER_CUI_TEST_TOKEN_2026"

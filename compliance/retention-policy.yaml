@@ -1,0 +1,15 @@
+# RET-01: Per-class retention policy. Loaded by barycenter.etl.framework.retention.RetentionSweeper.
+# Audit-log retention (6yr HIPAA) is owned by the audit subsystem (Phase 1) and NOT in scope here.
+version: 1
+default:
+  RESTRICTED: { ttl_months: 13 }
+  SENSITIVE:  { ttl_months: 60 }   # 5yr aggregates
+  INTERNAL:   { ttl_months: 60 }
+  PUBLIC:     { ttl_months: 60 }
+overrides:
+  # Example shape; populated when a HIPAA-tagged customer requires extension.
+  # - tenant_id: "<uuid>"
+  #   classes: { RESTRICTED: { ttl_months: 84 } }
+sweep_schedule:
+  cron: "0 12 * * *"   # 12:00 UTC daily; 6h offset from sync (Pitfall 10)
+  skip_recent_hours: 6  # Skip tables whose synced_at is within the sync window
