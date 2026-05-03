@@ -1,10 +1,11 @@
 name: infra-deploy
 on:
+  workflow_dispatch: {}
   pull_request:
     paths: [ 'infra/**', 'sql/**', '.github/workflows/infra-deploy.yml' ]
   push:
     branches: [ main ]
-    paths: [ 'infra/**', 'sql/**' ]
+    paths: [ 'infra/**', 'sql/**', '.github/workflows/infra-deploy.yml' ]
 
 permissions:
   id-token: write
@@ -45,7 +46,7 @@ jobs:
         run: az deployment group what-if -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
