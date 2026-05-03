@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import datetime as dt
 import pathlib
+import re
 
 import yaml
 
 from barycenter.etl.framework._audit_helpers import make_event
+
+# Allow only schema.table identifiers using safe characters (lowercase letters,
+# digits, underscores).  SQL Server does not support parameterised table names,
+# so we validate client-side before interpolating into the DELETE statement.
+_SAFE_TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 
 # Repo-relative resolution: src/barycenter/etl/framework/retention.py -> repo root
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[6]
@@ -55,6 +61,11 @@ class RetentionSweeper:
         *,
         tenant_id: str | None = None,
     ) -> int:
+        if not _SAFE_TABLE_RE.match(qualified_table):
+            raise ValueError(
+                f"sweep_table: unsafe table name {qualified_table!r} — "
+                "must match schema.table with only lowercase letters, digits, and underscores"
+            )
         ttl = self._ttl_months(field_class, tenant_id)
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=ttl * 30)
         cur = self._sql.cursor()
