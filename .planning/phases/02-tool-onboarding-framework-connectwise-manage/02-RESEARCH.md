@@ -817,32 +817,39 @@ def tickets_recipe() -> ETLRecipe:
 | A7 | The four canonical AI-zone shape names are exactly `customer_snapshot`, `customer_features_*`, `timeseries_aggregate`, `customer_memory` (from REQUIREMENTS.md TOOL-03 verbatim). The `customer_features_*` glob means one table per category (e.g., `customer_features_cw`); shape names are pre-declared, not arbitrary. | Architecture (Pattern 3) | If TOOL-03 intends literally one `customer_features` table with mixed contributions, the no-novel-shape test logic differs. Lock during plan-checker review. |
 | A8 | Attachment refusal for CUI tenants means dropping at fetch (don't download) rather than fetch-then-discard. | Pattern 4 | CW's API may inline small attachment metadata in ticket responses; ensure pagination filters do not request attachment expansion. Verify CW API parameters at integration. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All five questions raised during research were closed by plan decisions and the Plan 06 human-action gate. RESOLVED markers cite the implementing plan/task per Dimension 11.
 
 1. **CW Manage auth mode in Gravity's instance — OAuth or API Member key?**
    - What we know: Both are documented; CW's developer portal lists OAuth Client Credentials for cloud, and API Member key (Basic) is the most universally enabled.
    - What's unclear: Which is enabled for Gravity's specific instance.
    - Recommendation: Build auth as strategy interface; first plan task is "verify auth mode with CW admin and store credentials in KV." If OAuth: store `client_id` + `client_secret` + token endpoint URL. If Basic: store `company`, `public_key`, `private_key`, `client_id`. The strategy class abstracts the difference.
+   - **RESOLVED:** Plan 06 Task 1 (human-action gate) confirms auth mode with CW admin and stores the matching KV secrets; Plan 05 `client.py` implements both `BasicAuthStrategy` and `OAuthClientCredsStrategy` selectable via YAML config. The strategy interface absorbs whichever is enabled.
 
 2. **Per-tenant vs per-CW-company salt scope.**
    - What we know: `pseudo.person_map` keys are `(cw_company_id, email)`. PROJECT.md says "per-tenant salt". In the MSP context, "tenant" means an MSP customer = a `cw_company_id`.
    - What's unclear: Should salt be per-cw_company_id (most isolated) or per-Gravity-MSSP-tenant (one salt for all MSP customers)?
    - Recommendation: Per `cw_company_id`. Maximizes isolation; matches the "per-tenant pid, never global" anti-pattern in PITFALLS.md. Each customer relationship is its own pseudonym namespace.
+   - **RESOLVED:** Plan 02 `pseudonymizer.py` and Plan 04 `salt_rotation.py` both treat `tenant_id` as the `cw_company_id`. KV secret naming convention `salt-{tenant_id}` (= `salt-{cw_company_id}`) is locked into Plan 04 Task 2 implementation.
 
 3. **Time-entry aggregation grain.**
    - What we know: REQUIREMENTS specifies "time entries (aggregates only)."
    - What's unclear: Aggregation grain (per-day per-company, per-week per-company, per-month per-ticket-type).
    - Recommendation: Per-day per-company, with rollups happening in `ai_zone.timeseries_aggregate`. Keep raw aggregation as conservative as possible (highest grain that is not a per-entry row).
+   - **RESOLVED:** Plan 05 `recipes/time_entries.py` implements per-day per-company aggregation; Plan 04 `shape_builder.py` `_build_sql("timeseries_aggregate")` rolls up to per-month for the AI zone.
 
 4. **Salt rotation frequency before fire-drill.**
    - What we know: Quarterly rotation per pitfall guidance.
    - What's unclear: Exact cadence and whether the fire drill counts as the first quarterly rotation.
    - Recommendation: Fire drill is the first rotation; quarterly cadence starts thereafter, scheduled in `compliance/salt-rotation-state.yaml`.
+   - **RESOLVED:** Plan 01 Task 3 commits `compliance/salt-rotation-runbook.md` with the fire drill as step-zero; Plan 06 Task 2 (human-action) executes the fire drill and records outcome in `compliance/salt-rotation-state.yaml` `fire_drill` block. Quarterly cadence begins on the next Q boundary thereafter.
 
 5. **CW v2024.x API version pinning.**
    - What we know: Adapter pins to a specific version in the `Accept` header.
    - What's unclear: Which version is current in Gravity's instance.
    - Recommendation: Pin to `2024.1` initially; verify at first run; bump as needed in a tracked PR. Drift log catches surprises.
+   - **RESOLVED:** Plan 05 `adapters/connectwise/client.py` pins `Accept: application/vnd.connectwise.com+json; version=2024.1` as the default; drift log + Pitfall 6 schema-strict pydantic catches mismatches at first run.
 
 ## Environment Availability
 
