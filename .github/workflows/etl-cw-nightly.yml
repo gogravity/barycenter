@@ -44,5 +44,9 @@ jobs:
           python -m barycenter.etl.run --adapter connectwise
 
       - name: post-sync chain integrity check
-        run: |
-          python scripts/ci/chain_validate.py --live || echo "chain validate not yet wired in this env"
+        # TODO(2026-Q2): remove continue-on-error once chain_validate.py --live
+        # is wired to the production Log Analytics / WORM blob endpoints.
+        # Tracking: WR-05 — a non-zero exit here means WORM chain is broken or
+        # the validator is misconfigured; both must be treated as blocking.
+        continue-on-error: true
+        run: python scripts/ci/chain_validate.py --live
