@@ -36,6 +36,8 @@ jobs:
       - name: what-if identity
         run: az deployment group what-if -g $RG_IDENTITY -f infra/identity/main.bicep -p infra/identity/main.dev.bicepparam
       - name: what-if networking
+        env:
+          FGT_ADMIN_SSH_PUBLIC_KEY: ${{ vars.FGT_ADMIN_SSH_PUBLIC_KEY }}
         run: az deployment group what-if -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
       - name: what-if data
         run: az deployment group what-if -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam
@@ -62,6 +64,8 @@ jobs:
           echo "AUDIT_PRINCIPAL_ID=$(jq -r .auditPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "ADMIN_PRINCIPAL_ID=$(jq -r .adminPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
       - name: deploy networking
+        env:
+          FGT_ADMIN_SSH_PUBLIC_KEY: ${{ vars.FGT_ADMIN_SSH_PUBLIC_KEY }}
         run: az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
       - name: deploy data
         id: data
