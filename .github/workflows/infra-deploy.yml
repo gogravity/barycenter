@@ -44,6 +44,18 @@ jobs:
         run: az deployment group what-if -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam
       - name: what-if audit
         run: az deployment group what-if -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam
+      - name: what-if jobs
+        env:
+          DEPLOY_PRINCIPAL_ID: ${{ vars.DEPLOY_PRINCIPAL_ID }}
+          ETL_IDENTITY_RESOURCE_ID: ${{ vars.ETL_IDENTITY_RESOURCE_ID }}
+          ETL_PRINCIPAL_ID: placeholder
+          JOBS_SUBNET_ID: placeholder
+          KEY_VAULT_URL: ${{ vars.KEY_VAULT_URL }}
+          SQL_CONNECTION_STRING: ${{ vars.SQL_CONNECTION_STRING }}
+          DCE_LOGS_INGESTION_ENDPOINT: ${{ vars.DCE_LOGS_INGESTION_ENDPOINT }}
+          DCR_IMMUTABLE_ID: ${{ vars.DCR_IMMUTABLE_ID }}
+          WORM_APPEND_BLOB_URL: ${{ vars.WORM_APPEND_BLOB_URL }}
+        run: az deployment group what-if -g $RG_DEV -f infra/jobs/main.bicep -p infra/jobs/main.dev.bicepparam
 
   deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -93,8 +105,33 @@ jobs:
           echo "DCR_IMMUTABLE_ID=$(jq -r .dcrId.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
           echo "WORM_STORAGE_ACCOUNT=$(jq -r .wormStorageAccountId.value /tmp/audit-outputs.json | awk -F/ '{print $NF}')" >> $GITHUB_ENV
           echo "SQL_SERVER_FQDN=$(jq -r .sqlServerFqdn.value /tmp/data-outputs.json 2>/dev/null || echo 'sql-bary-dev.database.windows.net')" >> $GITHUB_ENV
+      - name: deploy jobs
+        id: jobs
+        env:
+          DEPLOY_PRINCIPAL_ID: ${{ vars.DEPLOY_PRINCIPAL_ID }}
+          ETL_IDENTITY_RESOURCE_ID: ${{ vars.ETL_IDENTITY_RESOURCE_ID }}
+        run: |
+          # Construct jobs-subnet ID from spoke VNet output captured in networking step
+          SPOKE_VNET_ID=$(jq -r .spokeVnetId.value /tmp/networking-outputs.json)
+          echo "JOBS_SUBNET_ID=${SPOKE_VNET_ID}/subnets/jobs-subnet" >> $GITHUB_ENV
+          export JOBS_SUBNET_ID="${SPOKE_VNET_ID}/subnets/jobs-subnet"
+          export ETL_PRINCIPAL_ID="$ETL_PRINCIPAL_ID"
+          export KEY_VAULT_URL="$(jq -r .keyVaultUri.value /tmp/data-outputs.json)"
+          export SQL_CONNECTION_STRING="${{ vars.SQL_CONNECTION_STRING }}"
+          export DCE_LOGS_INGESTION_ENDPOINT="$DCE_LOGS_INGESTION_ENDPOINT"
+          export DCR_IMMUTABLE_ID="$DCR_IMMUTABLE_ID"
+          export WORM_APPEND_BLOB_URL="${{ vars.WORM_APPEND_BLOB_URL }}"
+          az deployment group create \
+            -g $RG_DEV \
+            -f infra/jobs/main.bicep \
+            -p infra/jobs/main.dev.bicepparam \
+            --query properties.outputs -o json > /tmp/jobs-outputs.json
+          echo "ACR_NAME=$(jq -r .acrName.value /tmp/jobs-outputs.json)" >> $GITHUB_ENV
+          # Persist ACR_NAME as a repo variable so etl-cw-nightly.yml can reference it
+          gh variable set ACR_NAME --body "$(jq -r .acrName.value /tmp/jobs-outputs.json)"
       - name: emit deploy outputs to workflow summary
         run: |
-          echo "### Audit-module outputs captured for downstream jobs" >> $GITHUB_STEP_SUMMARY
-          echo "- DCE_LOGS_INGESTION_ENDPOINT, DCR_IMMUTABLE_ID, WORM_STORAGE_ACCOUNT exported to GITHUB_ENV" >> $GITHUB_STEP_SUMMARY
-          echo "- Consumed by audit-chain-validate.yml live-validate job" >> $GITHUB_STEP_SUMMARY
+          echo "### Deploy outputs" >> $GITHUB_STEP_SUMMARY
+          echo "- DCE_LOGS_INGESTION_ENDPOINT, DCR_IMMUTABLE_ID, WORM_STORAGE_ACCOUNT exported" >> $GITHUB_STEP_SUMMARY
+          echo "- ACR_NAME=$(jq -r .acrName.value /tmp/jobs-outputs.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- CAJ=$(jq -r .cajName.value /tmp/jobs-outputs.json)" >> $GITHUB_STEP_SUMMARY

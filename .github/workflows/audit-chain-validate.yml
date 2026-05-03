@@ -1,7 +1,7 @@
 name: audit-chain-validate
 on:
   pull_request:
-    paths: [ 'packages/barycenter-audit/**', 'sql/**', 'compliance/runbooks/chain-validate.md' ]
+    paths: [ 'packages/**', 'sql/**', 'compliance/runbooks/chain-validate.md', '.github/workflows/audit-chain-validate.yml' ]
   schedule:
     - cron: '15 6 * * *'    # 06:15 UTC nightly (after infra-drift)
   workflow_dispatch:

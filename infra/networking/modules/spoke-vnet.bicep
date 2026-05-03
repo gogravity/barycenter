@@ -14,7 +14,7 @@ param vnetName string
 @description('Spoke VNet CIDR (default 10.20.0.0/22).')
 param vnetCidr string = '10.20.0.0/22'
 
-@description('Subnets to create (array of {name, cidr}).')
+@description('Subnets to create (array of {name, cidr} or {name, cidr, delegation}).')
 param subnets array
 
 @description('FortiGate trust NIC IP — UDR next hop.')
@@ -56,15 +56,22 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
       name: s.name
       properties: {
         addressPrefix: s.cidr
-        // Recursion guard: PE and data subnets must NOT route 0/0 through the
-        // FortiGate — private link traffic would loop forever.
-        routeTable: (contains(s.name, 'pe-') || contains(s.name, 'data-')) ? null : {
+        // Recursion guard: PE, data, and delegated subnets must NOT route 0/0
+        // through the FortiGate. Delegated subnets (e.g. Container Apps) need
+        // direct egress for Azure control-plane management traffic.
+        routeTable: (contains(s.name, 'pe-') || contains(s.name, 'data-') || contains(s, 'delegation')) ? null : {
           id: udr.id
         }
         networkSecurityGroup: empty(nsgId) ? null : {
           id: nsgId
         }
         privateEndpointNetworkPolicies: (contains(s.name, 'pe-') || contains(s.name, 'data-')) ? 'Disabled' : 'Enabled'
+        delegations: contains(s, 'delegation') ? [
+          {
+            name: 'delegation'
+            properties: { serviceName: s.delegation }
+          }
+        ] : []
       }
     }]
   }
