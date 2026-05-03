@@ -15,9 +15,10 @@ def test_pseudonymize_emits_pid_and_salt_version(mock_kv_client):
     from barycenter.etl.primitives.pseudonymize import pseudonymize
     result = pseudonymize("email", "alice@example.com", "12345", mock_kv_client)
     assert "email" in result.params
-    assert "email_salt_version" in result.params
     assert len(result.params["email"]) == 64
-    assert result.params["email_salt_version"] == "v1"
+    # salt_version moved out-of-band to metadata (CR-02: avoids ?-placeholder mismatch)
+    assert result.metadata is not None
+    assert result.metadata["salt_version"] == "v1"
 
 
 def test_pseudonymize_calls_kv(mock_kv_client):
