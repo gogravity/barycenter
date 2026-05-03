@@ -43,6 +43,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
 resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01' = {
   parent: storageAccount
   name: 'default'
+  properties: {
+    // Required for immutableStorageWithVersioning on the container.
+    isVersioningEnabled: true
+  }
 }
 
 resource testContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01' = {
