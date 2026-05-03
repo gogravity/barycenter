@@ -12,6 +12,13 @@ from typing import Iterator
 
 from barycenter.etl import AdapterBase
 from barycenter.etl.adapters.connectwise.client import CWManageClient
+from barycenter.etl.adapters.connectwise.models import (
+    CWAgreement,
+    CWCompany,
+    CWConfiguration,
+    CWTicket,
+    log_drift,
+)
 from barycenter.etl.adapters.connectwise.recipes import (
     agreements_recipe,
     companies_recipe,
@@ -49,6 +56,15 @@ class CWManageAdapter(AdapterBase):
         "time_entries":   time_entries_recipe,
     }
 
+    # Pydantic models for drift detection (Pitfall 6). time_entries uses
+    # pre-aggregated dicts assembled client-side — no CW model applies.
+    _MODELS = {
+        "companies":      CWCompany,
+        "agreements":     CWAgreement,
+        "tickets":        CWTicket,
+        "configurations": CWConfiguration,
+    }
+
     def __init__(
         self,
         audit,
@@ -66,7 +82,14 @@ class CWManageAdapter(AdapterBase):
         if table == "time_entries":
             yield from self._fetch_time_entries_aggregated(path)
         else:
-            yield from self._cw.paginate(path)
+            model = self._MODELS.get(table)
+            for raw in self._cw.paginate(path):
+                if model is not None:
+                    validated = model.model_validate(raw)
+                    unknown = set(raw) - set(validated.model_fields)
+                    if unknown:
+                        log_drift(model.__name__, unknown)
+                yield raw
             self._cw.assert_clean_termination(path)
 
     def _fetch_time_entries_aggregated(self, path: str) -> Iterator[dict]:
