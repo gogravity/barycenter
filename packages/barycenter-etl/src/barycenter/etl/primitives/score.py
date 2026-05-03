@@ -13,8 +13,15 @@ from barycenter.etl.primitives._result import PrimitiveResult
 _ALLOWED = set("0123456789+-*/(). ")
 
 
-def score(fields: dict, formula: str) -> PrimitiveResult:
-    """Evaluate ``formula`` using ``fields`` as the symbol table."""
+def score(field: str, fields: dict, formula: str) -> PrimitiveResult:
+    """Evaluate ``formula`` using ``fields`` as the symbol table.
+
+    ``field`` is the target column name; it becomes the params key so that
+    multiple score columns in one recipe do not collide (previously hardcoded
+    to ``"score"``).
+    """
+    if not isinstance(field, str) or not field:
+        raise ValueError(f"score field must be a non-empty string, got {field!r}")
     if not isinstance(fields, dict):
         raise ValueError(f"score fields must be a dict, got {type(fields).__name__}")
     if not isinstance(formula, str) or not formula:
@@ -33,6 +40,6 @@ def score(fields: dict, formula: str) -> PrimitiveResult:
     result = eval(safe, {"__builtins__": {}}, {})  # noqa: S307 - sanitized arithmetic
     return PrimitiveResult(
         expr="?",
-        params={"score": result},
+        params={field: result},
         field_class="INTERNAL",
     )

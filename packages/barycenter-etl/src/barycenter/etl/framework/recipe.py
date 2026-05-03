@@ -105,6 +105,7 @@ class ETLRecipe(BaseModel):
                 )
             elif primitive_name == "score":
                 res = fn(
+                    col,
                     kwargs.get("fields", {col: value or 0}),
                     kwargs.get("formula", "0"),
                 )
