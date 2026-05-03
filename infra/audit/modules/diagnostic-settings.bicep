@@ -42,7 +42,8 @@ resource sqlDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if
   properties: {
     workspaceId: workspaceResourceId
     logs: [
-      { categoryGroup: 'audit', enabled: true }
+      // categoryGroup and category cannot be mixed in the same diagnostic setting.
+      // Individual categories used here; SQLSecurityAuditEvents covers HIPAA §164.312(b).
       { category: 'SQLSecurityAuditEvents', enabled: true }
       { category: 'SQLInsights', enabled: true }
       { category: 'AutomaticTuning', enabled: true }
