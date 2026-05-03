@@ -1,8 +1,8 @@
 using 'main.bicep'
 
 param location = 'eastus2'
-param sqlLocation = 'eastus'
-param sqlServerName = 'sql-bary-dev'
+param sqlLocation = 'centralus'
+param sqlServerName = 'sql-bary-dev-01'
 param keyVaultName = 'kv-bary-dev'
 param dataSubnetId = readEnvironmentVariable('DATA_SUBNET_ID', '')
 param peSubnetId = readEnvironmentVariable('PE_SUBNET_ID', '')
