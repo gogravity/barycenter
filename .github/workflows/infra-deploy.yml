@@ -1,10 +1,11 @@
 name: infra-deploy
 on:
+  workflow_dispatch: {}
   pull_request:
     paths: [ 'infra/**', 'sql/**', '.github/workflows/infra-deploy.yml' ]
   push:
     branches: [ main ]
-    paths: [ 'infra/**', 'sql/**' ]
+    paths: [ 'infra/**', 'sql/**', '.github/workflows/infra-deploy.yml' ]
 
 permissions:
   id-token: write
@@ -36,6 +37,8 @@ jobs:
       - name: what-if identity
         run: az deployment group what-if -g $RG_IDENTITY -f infra/identity/main.bicep -p infra/identity/main.dev.bicepparam
       - name: what-if networking
+        env:
+          FGT_ADMIN_SSH_PUBLIC_KEY: ${{ vars.FGT_ADMIN_SSH_PUBLIC_KEY }}
         run: az deployment group what-if -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
       - name: what-if data
         run: az deployment group what-if -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam
@@ -43,7 +46,7 @@ jobs:
         run: az deployment group what-if -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,9 +65,20 @@ jobs:
           echo "AUDIT_PRINCIPAL_ID=$(jq -r .auditPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "ADMIN_PRINCIPAL_ID=$(jq -r .adminPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
       - name: deploy networking
-        run: az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam
+        id: networking
+        env:
+          FGT_ADMIN_SSH_PUBLIC_KEY: ${{ vars.FGT_ADMIN_SSH_PUBLIC_KEY }}
+        run: |
+          az deployment group create -g $RG_DEV -f infra/networking/main.bicep -p infra/networking/main.dev.bicepparam --query properties.outputs -o json > /tmp/networking-outputs.json
+          SPOKE_VNET_ID=$(jq -r .spokeVnetId.value /tmp/networking-outputs.json)
+          echo "DATA_SUBNET_ID=${SPOKE_VNET_ID}/subnets/data-subnet" >> $GITHUB_ENV
+          echo "PE_SUBNET_ID=${SPOKE_VNET_ID}/subnets/pe-subnet" >> $GITHUB_ENV
       - name: deploy data
         id: data
+        env:
+          DEPLOY_PRINCIPAL_ID: ${{ vars.DEPLOY_PRINCIPAL_ID }}
+          SQL_ADMIN_GROUP_OBJECT_ID: ${{ vars.SQL_ADMIN_GROUP_OBJECT_ID }}
+          DEPLOY_IDENTITY_RESOURCE_ID: ${{ vars.DEPLOY_IDENTITY_RESOURCE_ID }}
         run: |
           az deployment group create -g $RG_DEV -f infra/data/main.bicep -p infra/data/main.dev.bicepparam --query properties.outputs -o json > /tmp/data-outputs.json
           echo "SQL_SERVER_ID=$(jq -r .sqlServerId.value /tmp/data-outputs.json)" >> $GITHUB_ENV

@@ -42,17 +42,16 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// FOUND-03: bootstrap salt key. NOTE: kty must be 'oct' for the standard SKU. Premium
-// SKU is required for 'oct-HSM' (FIPS 140-2 Level 2/3). TODO: upgrade to Premium +
-// 'oct-HSM' when a customer demands FIPS-validated HSM-backed keys (PROJECT.md
-// out-of-scope for v1). Until then 'oct' is sufficient given KV vault-level isolation,
-// PE-only access, and the Crypto User scoped role binding below (sign-only, no export).
+// FOUND-03: bootstrap salt key as RSA-2048 (standard KV only supports RSA and EC;
+// oct requires Managed HSM). Salt material for HMAC is stored as a KV secret and
+// fetched by Pseudonymizer.derive() — this key serves as the bootstrap anchor.
+// Upgrade to Managed HSM + oct-HSM for FIPS 140-2 Level 3 when required.
 resource saltKey 'Microsoft.KeyVault/vaults/keys@2023-07-01' = {
   parent: kv
   name: 'salt-tenant-bootstrap'
   properties: {
-    kty: 'oct'
-    keySize: 256
+    kty: 'RSA'
+    keySize: 2048
     keyOps: [
       'sign'
       'verify'
