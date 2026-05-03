@@ -20,8 +20,11 @@ jobs:
         run: |
           pip install -r scripts/ci/requirements.txt
           pip install -e 'packages/barycenter-audit[dev]'
+          pip install -e 'packages/barycenter-etl[dev]'
       - name: pytest audit SDK
         run: pytest packages/barycenter-audit/tests -q --ignore=packages/barycenter-audit/tests/integration
+      - name: pytest ETL framework + adapters
+        run: pytest packages/barycenter-etl/tests -q --ignore=packages/barycenter-etl/tests/integration
       - name: VER-02 + AUDIT-01 self-tests
         run: |
           python scripts/ci/field_class_check.py --check-static
@@ -32,3 +35,5 @@ jobs:
           python scripts/ci/fortigate_drift.py --self-test --drifted
           python scripts/ci/grant_drift_check.py --self-test
           python scripts/ci/grant_drift_check.py --self-test --drifted
+          python scripts/ci/check_salt_runbook.py --check-static
+          python scripts/ci/check_salt_runbook.py --self-test
