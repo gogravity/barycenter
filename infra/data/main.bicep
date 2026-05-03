@@ -9,8 +9,11 @@
 
 targetScope = 'resourceGroup'
 
-@description('Azure region')
+@description('Azure region (KV, private endpoints, deploy script)')
 param location string
+
+@description('Azure region for the SQL logical server. Defaults to location. Override when the primary region has capacity constraints (e.g. eastus2 RegionDoesNotAllowProvisioning).')
+param sqlLocation string = location
 
 @description('SQL logical server name')
 param sqlServerName string = 'sql-bary-dev'
@@ -70,7 +73,7 @@ param tags object
 module sql 'modules/sql-serverless.bicep' = {
   name: 'sql-serverless'
   params: {
-    location: location
+    location: sqlLocation
     sqlServerName: sqlServerName
     adminLoginName: adminLoginName
     adminLoginObjectId: adminLoginObjectId
