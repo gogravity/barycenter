@@ -25,27 +25,39 @@
   },
   {
     "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "SELECT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "INSERT",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
+    "schema": "pseudo",
+    "permission": "UPDATE",
+    "state": "GRANT"
+  },
+  {
+    "principal": "mi-bary-etl",
     "schema": "ai_zone",
     "permission": "SELECT",
-    "state": "DENY"
+    "state": "GRANT"
   },
   {
     "principal": "mi-bary-etl",
     "schema": "ai_zone",
     "permission": "INSERT",
-    "state": "DENY"
-  },
-  {
-    "principal": "mi-bary-etl",
-    "schema": "ai_zone",
-    "permission": "UPDATE",
-    "state": "DENY"
+    "state": "GRANT"
   },
   {
     "principal": "mi-bary-etl",
     "schema": "ai_zone",
     "permission": "DELETE",
-    "state": "DENY"
+    "state": "GRANT"
   },
   {
     "principal": "mi-bary-etl",
@@ -68,30 +80,6 @@
   {
     "principal": "mi-bary-etl",
     "schema": "audit",
-    "permission": "DELETE",
-    "state": "DENY"
-  },
-  {
-    "principal": "mi-bary-etl",
-    "schema": "pseudo",
-    "permission": "SELECT",
-    "state": "DENY"
-  },
-  {
-    "principal": "mi-bary-etl",
-    "schema": "pseudo",
-    "permission": "INSERT",
-    "state": "DENY"
-  },
-  {
-    "principal": "mi-bary-etl",
-    "schema": "pseudo",
-    "permission": "UPDATE",
-    "state": "DENY"
-  },
-  {
-    "principal": "mi-bary-etl",
-    "schema": "pseudo",
     "permission": "DELETE",
     "state": "DENY"
   },
