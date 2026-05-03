@@ -1,13 +1,29 @@
 """Unit tests for the score primitive (TOOL-02)."""
 import pytest
 
-pytest.importorskip("barycenter.etl.primitives.score",
-                    reason="Plan 02 implements primitives")
 
-
-def test_score_returns_primitive_result():
+def test_score_basic_arithmetic():
     from barycenter.etl.primitives.score import score
     from barycenter.etl.primitives import PrimitiveResult
     result = score({"a": 1, "b": 2}, "a*2+b")
     assert isinstance(result, PrimitiveResult)
-    assert result.field_class in {"DROPPED", "INTERNAL", "SENSITIVE", "PUBLIC"}
+    assert result.params["score"] == 4
+    assert result.field_class == "INTERNAL"
+
+
+def test_score_with_parens():
+    from barycenter.etl.primitives.score import score
+    assert score({"a": 2, "b": 3}, "(a+b)*2").params["score"] == 10
+
+
+def test_score_rejects_disallowed_chars():
+    from barycenter.etl.primitives.score import score
+    with pytest.raises(ValueError):
+        score({"a": 1}, "__import__('os')")
+
+
+def test_score_rejects_function_calls():
+    from barycenter.etl.primitives.score import score
+    with pytest.raises(ValueError):
+        # The 'pow' identifier is unknown; substitution leaves letters in expr.
+        score({"a": 1}, "pow(a, 2)")
