@@ -45,7 +45,7 @@ schemas:
       configuration_type_name: PUBLIC
       manufacturer_name:       PUBLIC
       model_number:            PUBLIC
-      serial_number:           RESTRICTED
+      serial_number:           INTERNAL  # stored as SHA-256 hash via configurations recipe (Plan 02-05)
       status_name:             PUBLIC
       installation_date:       INTERNAL
       synced_at:               INTERNAL
