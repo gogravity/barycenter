@@ -64,6 +64,10 @@ class Pseudonymizer:
             # Pitfall 5: dereference salt material immediately
             if salt_bytes is not None:
                 del salt_bytes
+            try:
+                del salt_material  # may not exist if exception raised before assignment
+            except NameError:
+                pass
             del secret
 
     def __repr__(self) -> str:
