@@ -144,6 +144,7 @@ module grants 'modules/sql-grants-deploy-script.bicep' = if (!empty(scriptContai
 
 output sqlServerId string = sql.outputs.serverId
 output sqlServerFqdn string = sql.outputs.serverFqdn
+output databaseId string = sql.outputs.databaseId
 output keyVaultId string = kv.outputs.vaultId
 output keyVaultUri string = kv.outputs.vaultUri
 output saltKeyId string = kv.outputs.saltKeyId
