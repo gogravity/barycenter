@@ -1,0 +1,24 @@
+# ENC-02: Salt rotation state tracker. NOT a secret — only references KV version IDs.
+# The actual salt material lives in Key Vault. This file records mode + execution log.
+version: 1
+tenants: {}
+# Example shape (not real):
+# tenants:
+#   "12345":
+#     mode: "new-only"            # one of: "new-only" | "dual-write"
+#     old_version: "abc..."
+#     new_version: "def..."
+#     window_opened_at: "2026-05-02T00:00:00Z"
+#     expected_close_at: "2026-05-03T00:00:00Z"
+executions: []
+# - tenant_id: "12345"
+#   step: "salt.rotate.create_new_version"
+#   operator: "craigadmin@gogravity.net"
+#   timestamp: "2026-05-02T...:00Z"
+#   outcome: "success"
+fire_drill:
+  completed: false
+  tenant_id: null
+  completed_at: null
+  operator: null
+  log_excerpt: null
