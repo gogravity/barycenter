@@ -55,17 +55,15 @@ module miAdmin 'modules/managed-identity.bicep' = {
   }
 }
 
-// PIM eligibility on mi-bary-admin only (Pitfall 1: no standing grants).
-// Module is deployed against the target RG (rg-barycenter-dev), which is a different
-// RG than the one this template deploys to (rg-barycenter-identity).
-module pimAdmin 'modules/pim-eligibility.bicep' = {
-  name: 'pim-${identityNames.admin}-eligible'
+// PIM eligibility skipped — AAD P2 not available on this subscription.
+// Replace with a standard Reader role assignment so deploy succeeds;
+// upgrade to roleEligibilityScheduleRequests once P2 is licensed.
+module adminReaderRole 'modules/role-assignment.bicep' = {
+  name: 'ra-${identityNames.admin}-reader'
   scope: resourceGroup(targetResourceGroup)
   params: {
     principalId: miAdmin.outputs.principalId
     roleDefinitionId: readerRoleDefinitionId
-    justification: 'IDENT-02 + IDENT-05: admin MI is PIM-eligible only; activation requires dual approval (configured via role management policy — see infra/identity/README.md)'
-    maxActivationDurationHours: 4
   }
 }
 
