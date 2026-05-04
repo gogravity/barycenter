@@ -25,7 +25,9 @@ param spokeSubnets = [
   // Deploy-script subnet for VNet-injected ARM deployment scripts (SQL migrations).
   // Delegated to ACI so the container can reach the SQL private endpoint.
   // Skips FortiGate UDR (delegation guard) — uses direct internet egress for apt-get.
-  { name: 'deploy-script-subnet', cidr: '10.20.0.224/27', delegation: 'Microsoft.ContainerInstance/containerGroups' }
+  // Microsoft.Storage service endpoint lets the script storage account use a VNet rule
+  // instead of a private endpoint (no PE registration required).
+  { name: 'deploy-script-subnet', cidr: '10.20.0.224/27', delegation: 'Microsoft.ContainerInstance/containerGroups', serviceEndpoints: ['Microsoft.Storage'] }
 ]
 param tags = {
   project: 'barycenter'

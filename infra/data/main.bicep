@@ -106,6 +106,34 @@ module kvPe 'modules/private-endpoint.bicep' = {
   }
 }
 
+// Storage account for ARM deployment script working files. Required when VNet-injecting
+// the script container. Has no private endpoint — instead a VNet rule grants access from
+// deploy-script-subnet via its Microsoft.Storage service endpoint.
+// networkAcls.defaultAction Deny satisfies CLAUDE.md storage security requirement.
+resource scriptStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = if (!empty(deployScriptSubnetId)) {
+  name: 'stbarydeploydev'
+  location: location
+  tags: tags
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
+    networkAcls: {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices'
+      virtualNetworkRules: [
+        {
+          // Allow access from the VNet-injected ACI container via service endpoint.
+          id: deployScriptSubnetId
+          action: 'Allow'
+        }
+      ]
+    }
+  }
+}
+
 // Grants script runs the SQL DDL + grants + chain genesis seed via a VNet-injected ACI
 // container. Skipped when deployScriptSubnetId is empty (infra-only deploys before
 // the networking stack has provisioned deploy-script-subnet).
@@ -116,6 +144,7 @@ module grants 'modules/sql-grants-deploy-script.bicep' = if (!empty(deployScript
     deployIdentityId: deployIdentityResourceId
     sqlServerFqdn: sql.outputs.serverFqdn
     deployScriptSubnetId: deployScriptSubnetId
+    scriptStorageAccountName: scriptStorage.name
     tags: tags
   }
   dependsOn: [
