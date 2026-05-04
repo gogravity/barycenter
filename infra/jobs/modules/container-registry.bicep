@@ -38,7 +38,9 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   }
 }
 
-// mi-bary-etl: pull images inside the Container Apps Job
+// mi-bary-etl: pull images inside CAJ + push via az acr build in etl-cw-nightly.yml.
+// AcrPush is required because az acr build uses the calling identity for control-plane
+// discovery; AcrPull alone returns "not found" (Azure obscures inaccessible resources).
 resource etlAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: acr
   name: guid(acr.id, etlPrincipalId, acrPullRoleId)
@@ -49,7 +51,17 @@ resource etlAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// mi-bary-deploy: push images from CI (az acr build)
+resource etlAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: acr
+  name: guid(acr.id, etlPrincipalId, acrPushRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPushRoleId)
+    principalId: etlPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// mi-bary-deploy: push images from infra CI (az acr build in infra-deploy.yml)
 resource deployAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: acr
   name: guid(acr.id, deployPrincipalId, acrPushRoleId)
