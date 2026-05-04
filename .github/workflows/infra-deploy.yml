@@ -128,8 +128,8 @@ jobs:
             -p infra/jobs/main.dev.bicepparam \
             --query properties.outputs -o json > /tmp/jobs-outputs.json
           echo "ACR_NAME=$(jq -r .acrName.value /tmp/jobs-outputs.json)" >> $GITHUB_ENV
-          # Persist ACR_NAME as a repo variable so etl-cw-nightly.yml can reference it
-          GH_TOKEN="${{ github.token }}" gh variable set ACR_NAME --body "$(jq -r .acrName.value /tmp/jobs-outputs.json)"
+          # ACR_NAME repo variable (acrbarydev) is set once manually or via bootstrap.
+          # GITHUB_TOKEN cannot write repo variables; update manually if acrName changes.
       - name: emit deploy outputs to workflow summary
         run: |
           echo "### Deploy outputs" >> $GITHUB_STEP_SUMMARY
