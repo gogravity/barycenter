@@ -126,8 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     dcr_id = os.environ["DCR_IMMUTABLE_ID"]
     stream = os.environ.get("DCR_STREAM_NAME", "Custom-AuditEvents_CL")
     worm_url = os.environ["WORM_APPEND_BLOB_URL"]
+    # All three audit sinks use audit_cred (mi-bary-audit):
+    # - LA: Monitoring Metrics Publisher on DCR granted to mi-bary-audit (Bicep)
+    # - WORM: Storage Blob Data Contributor on stbarywormdev granted to mi-bary-audit
+    # - SQL chain_state: SELECT/UPDATE granted to mi-bary-audit (002_audit_grants.sql)
     la = LogsAnalyticsSink(
-        LogsIngestionClient(endpoint=dce_endpoint, credential=cred),
+        LogsIngestionClient(endpoint=dce_endpoint, credential=audit_cred),
         dcr_immutable_id=dcr_id,
         stream_name=stream,
     )
@@ -137,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     from azure.core.exceptions import ResourceExistsError
     # azure-storage-blob>=12.24 removed AppendBlobClient from the public API;
     # append blob operations (create_append_blob, append_block) are now on BlobClient.
-    _worm_blob_client = BlobClient.from_blob_url(worm_url, credential=cred)
+    _worm_blob_client = BlobClient.from_blob_url(worm_url, credential=audit_cred)
     try:
         _worm_blob_client.create_append_blob()
     except ResourceExistsError:
