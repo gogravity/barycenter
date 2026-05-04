@@ -103,7 +103,7 @@ class AdapterBase(ABC):
 
             try:
                 cur = self._sql.cursor()
-                cur.execute(f"TRUNCATE TABLE {qualified}")  # D-01
+                cur.execute(f"DELETE FROM {qualified}")  # D-01 (DELETE not TRUNCATE — mi-bary-etl has DELETE on schema, not ALTER TABLE which TRUNCATE requires)
                 canary_fields = self.CUI_CANARY_FIELDS.get(table, [])
                 recipe = self.recipe_for(table)
                 record_count = 0
