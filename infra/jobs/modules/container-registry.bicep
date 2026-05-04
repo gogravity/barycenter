@@ -1,7 +1,8 @@
 // Azure Container Registry (Basic SKU) for the ETL container image.
 // Images do not contain PHI — Basic SKU with public pull is acceptable.
-// Admin user disabled; mi-bary-etl authenticates via AcrPull managed identity role.
-// mi-bary-deploy (CI build) authenticates via AcrPush managed identity role.
+// Admin user disabled; managed identity auth only (no admin credentials).
+// mi-bary-etl: AcrPull (CAJ image pull) + AcrPush (docker push from etl-cw-nightly).
+// mi-bary-deploy: AcrPush (docker push from infra-deploy CI).
 
 targetScope = 'resourceGroup'
 
@@ -38,9 +39,8 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   }
 }
 
-// mi-bary-etl: pull images inside CAJ + push via az acr build in etl-cw-nightly.yml.
-// AcrPush is required because az acr build uses the calling identity for control-plane
-// discovery; AcrPull alone returns "not found" (Azure obscures inaccessible resources).
+// mi-bary-etl: AcrPull for CAJ image pull at runtime; AcrPush for docker push in CI.
+// Uses docker build + az acr login (data-plane only) — no ACR Tasks permissions needed.
 resource etlAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: acr
   name: guid(acr.id, etlPrincipalId, acrPullRoleId)
