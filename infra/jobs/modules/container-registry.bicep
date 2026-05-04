@@ -27,14 +27,13 @@ param tags object = {}
 var acrPullRoleId  = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var acrPushRoleId  = '8311e382-0749-4cb8-b61a-304f252e45ec'
 
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   name: acrName
   location: location
   tags: tags
   sku: { name: 'Basic' }
   properties: {
     adminUserEnabled: false          // managed identity auth only
-    anonymousPullEnabled: false
     publicNetworkAccess: 'Enabled'   // Basic SKU — no private endpoint support; images only, no PHI
   }
 }

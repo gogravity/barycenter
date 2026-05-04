@@ -47,7 +47,7 @@ param tags object = {}
 
 // Workload profiles environment — minimum /27 subnet, supports VNet injection.
 // Consumption workload profile: pay-per-execution, ~$0/mo for a nightly 5-min run.
-resource cae 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource cae 'Microsoft.App/managedEnvironments@2025-01-01' = {
   name: caeName
   location: location
   tags: tags
@@ -65,7 +65,7 @@ resource cae 'Microsoft.App/managedEnvironments@2024-03-01' = {
   }
 }
 
-resource caj 'Microsoft.App/jobs@2024-03-01' = {
+resource caj 'Microsoft.App/jobs@2025-01-01' = {
   name: cajName
   location: location
   tags: tags
@@ -99,9 +99,10 @@ resource caj 'Microsoft.App/jobs@2024-03-01' = {
       containers: [
         {
           name: 'etl'
-          // etl-cw-nightly.yml tags the image with the commit SHA then updates this
-          // job's image before starting it, so the job always runs the current build.
-          image: '${acrLoginServer}/barycenter-etl:latest'
+          // Placeholder image for initial deploy — ACR is empty at first provisioning.
+          // etl-cw-nightly.yml builds, pushes, and updates this image to
+          // ${acrLoginServer}/barycenter-etl:<sha> before starting the job.
+          image: 'mcr.microsoft.com/azure-cli:latest'
           env: [
             { name: 'KEY_VAULT_URL',             value: keyVaultUrl }
             { name: 'SQL_CONNECTION_STRING',      value: sqlConnectionString }
