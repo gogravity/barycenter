@@ -31,6 +31,7 @@ jobs:
         run: |
           az acr build \
             --registry "$ACR_NAME" \
+            --resource-group rg-barycenter-dev \
             --image "barycenter-etl:${{ github.sha }}" \
             --image "barycenter-etl:latest" \
             --file packages/barycenter-etl/Dockerfile \
