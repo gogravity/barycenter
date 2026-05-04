@@ -22,6 +22,10 @@ param spokeSubnets = [
   // /27 meets the workload-profiles minimum. Delegation skips FortiGate UDR
   // so Container Apps control-plane management traffic egresses directly.
   { name: 'jobs-subnet', cidr: '10.20.0.192/27', delegation: 'Microsoft.App/environments' }
+  // Deploy-script subnet for VNet-injected ARM deployment scripts (SQL migrations).
+  // Delegated to ACI so the container can reach the SQL private endpoint.
+  // Skips FortiGate UDR (delegation guard) — uses direct internet egress for apt-get.
+  { name: 'deploy-script-subnet', cidr: '10.20.0.224/27', delegation: 'Microsoft.ContainerInstance/containerGroups' }
 ]
 param tags = {
   project: 'barycenter'

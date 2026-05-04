@@ -89,6 +89,8 @@ jobs:
           SPOKE_VNET_ID=$(jq -r .spokeVnetId.value /tmp/networking-outputs.json)
           echo "DATA_SUBNET_ID=${SPOKE_VNET_ID}/subnets/data-subnet" >> $GITHUB_ENV
           echo "PE_SUBNET_ID=${SPOKE_VNET_ID}/subnets/pe-subnet" >> $GITHUB_ENV
+          # deploy-script-subnet: VNet-injected ACI for SQL DDL migrations (Phase 03+)
+          echo "DEPLOY_SCRIPT_SUBNET_ID=${SPOKE_VNET_ID}/subnets/deploy-script-subnet" >> $GITHUB_ENV
       - name: deploy data
         id: data
         env:

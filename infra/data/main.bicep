@@ -33,17 +33,8 @@ param sqlPrivateDnsZoneId string = ''
 @description('Optional private DNS zone resource ID for privatelink.vaultcore.azure.net')
 param kvPrivateDnsZoneId string = ''
 
-@description('PrincipalId of mi-bary-etl')
+@description('PrincipalId of mi-bary-etl (KV Secrets User grant)')
 param etlPrincipalId string
-
-@description('PrincipalId of mi-bary-platform')
-param platformPrincipalId string
-
-@description('PrincipalId of mi-bary-audit')
-param auditPrincipalId string
-
-@description('PrincipalId of mi-bary-admin')
-param adminPrincipalId string
 
 @description('PrincipalId of mi-bary-deploy (KV Administrator + deploy script identity)')
 param deployPrincipalId string
@@ -60,12 +51,8 @@ param adminLoginObjectId string
 @description('Resource ID of mi-bary-deploy (used as user-assigned identity on the deployment script)')
 param deployIdentityResourceId string
 
-@description('Storage account name for the deploy-script transient container (created by CI workflow before deploy)')
-param scriptStorageAccountName string
-
-@description('SAS URI to the deploy-script transient blob container (issued by CI workflow at deploy time)')
-@secure()
-param scriptContainerSasUri string
+@description('Resource ID of the deploy-script-subnet (delegated to Microsoft.ContainerInstance/containerGroups). Leave empty to skip SQL migration script.')
+param deployScriptSubnetId string = ''
 
 @description('Tags applied to all resources')
 param tags object
@@ -119,21 +106,16 @@ module kvPe 'modules/private-endpoint.bicep' = {
   }
 }
 
-// Grants script depends on SQL + KV + both PEs because it must connect to SQL via the
-// private endpoint to apply DDL + grants. Skipped when scriptContainerSasUri is empty
-// (infra-only deploys that haven't staged the SQL blobs yet).
-module grants 'modules/sql-grants-deploy-script.bicep' = if (!empty(scriptContainerSasUri)) {
+// Grants script runs the SQL DDL + grants + chain genesis seed via a VNet-injected ACI
+// container. Skipped when deployScriptSubnetId is empty (infra-only deploys before
+// the networking stack has provisioned deploy-script-subnet).
+module grants 'modules/sql-grants-deploy-script.bicep' = if (!empty(deployScriptSubnetId)) {
   name: 'sql-grants'
   params: {
     location: location
     deployIdentityId: deployIdentityResourceId
     sqlServerFqdn: sql.outputs.serverFqdn
-    etlPrincipalId: etlPrincipalId
-    platformPrincipalId: platformPrincipalId
-    auditPrincipalId: auditPrincipalId
-    adminPrincipalId: adminPrincipalId
-    scriptStorageAccountName: scriptStorageAccountName
-    scriptContainerSasUri: scriptContainerSasUri
+    deployScriptSubnetId: deployScriptSubnetId
     tags: tags
   }
   dependsOn: [
