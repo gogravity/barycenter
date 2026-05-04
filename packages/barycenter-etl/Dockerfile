@@ -31,6 +31,11 @@ RUN pip install --no-cache-dir /app/packages/barycenter-audit
 COPY packages/barycenter-etl /app/packages/barycenter-etl
 RUN pip install --no-cache-dir /app/packages/barycenter-etl
 
+# CanaryScanner resolves compliance/cui-canary-phrases.yaml relative to CWD (/app).
+# The repo-root resolution (parents[6]) is wrong for an installed package, so we
+# rely on the CWD fallback instead by shipping the file at /app/compliance/.
+COPY compliance /app/compliance
+
 # Non-root user for principle of least privilege.
 RUN useradd --system --no-create-home etl
 USER etl
