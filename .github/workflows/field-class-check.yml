@@ -1,7 +1,7 @@
 name: field-class-check
 on:
   pull_request:
-    paths: [ 'packages/**', 'sql/**', 'compliance/field-class-registry.yaml', '.github/workflows/field-class-check.yml' ]
+    # No path filter — ver-02-static is a required check on all PRs and runs in <1 min.
   push:
     branches: [ main ]
     paths: [ 'sql/**', 'compliance/field-class-registry.yaml' ]
