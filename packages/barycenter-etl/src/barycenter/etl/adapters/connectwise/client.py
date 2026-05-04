@@ -10,11 +10,14 @@ Critical correctness invariants:
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Iterator
 
 import httpx
+
+_log = logging.getLogger(__name__)
 from tenacity import (
     RetryError,
     retry,
@@ -116,6 +119,12 @@ class CWManageClient:
             ra = int(r.headers.get("Retry-After", "5"))
             time.sleep(min(ra, 60))
             r.raise_for_status()  # triggers tenacity retry
+        if not r.is_success:
+            # Log response body so we can diagnose non-2xx errors (e.g. CW 400)
+            _log.warning(
+                "CW API %s %s → %s body: %s",
+                r.request.method, r.url, r.status_code, r.text[:1000],
+            )
         r.raise_for_status()
         return r
 

@@ -111,7 +111,7 @@ jobs:
         run: |
           az deployment group create -g $RG_DEV -f infra/audit/main.bicep -p infra/audit/main.dev.bicepparam --query properties.outputs -o json > /tmp/audit-outputs.json
           echo "DCE_LOGS_INGESTION_ENDPOINT=$(jq -r .dceLogsIngestionEndpoint.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
-          echo "DCR_IMMUTABLE_ID=$(jq -r .dcrId.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
+          echo "DCR_IMMUTABLE_ID=$(jq -r .dcrImmutableId.value /tmp/audit-outputs.json)" >> $GITHUB_ENV
           echo "WORM_STORAGE_ACCOUNT=$(jq -r .wormStorageAccountId.value /tmp/audit-outputs.json | awk -F/ '{print $NF}')" >> $GITHUB_ENV
           echo "SQL_SERVER_FQDN=$(jq -r .sqlServerFqdn.value /tmp/data-outputs.json 2>/dev/null || echo 'sql-bary-dev.database.windows.net')" >> $GITHUB_ENV
       - name: deploy jobs
