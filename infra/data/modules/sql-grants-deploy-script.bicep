@@ -20,6 +20,12 @@ param sqlServerFqdn string
 @description('Resource ID of the deploy-script-subnet (delegated to Microsoft.ContainerInstance/containerGroups)')
 param deployScriptSubnetId string
 
+@description('Name of the pre-existing storage account the deployment script uses for its working files (required when VNet-injected)')
+param scriptStorageAccountName string
+
+@description('Resource group of the script storage account (defaults to current RG)')
+param scriptStorageAccountResourceGroupName string = resourceGroup().name
+
 @description('Force-update tag — bump to re-run the script with new SQL content')
 param forceUpdateTag string = utcNow()
 
@@ -47,6 +53,12 @@ resource grantsScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     timeout: 'PT30M'
     retentionInterval: 'P1D'
     cleanupPreference: 'OnSuccess'
+    // Storage account for deployment script working files. Required when VNet-injected.
+    // The account is created in main.bicep with a VNet rule allowing deploy-script-subnet.
+    storageAccountSettings: {
+      storageAccountName: scriptStorageAccountName
+      storageAccountResourceGroupName: scriptStorageAccountResourceGroupName
+    }
     // VNet-inject the ACI container so it can reach the private SQL endpoint.
     // The deploy-script-subnet is delegated to Microsoft.ContainerInstance/containerGroups
     // and has no FortiGate UDR (delegation skips it) so it has direct internet egress

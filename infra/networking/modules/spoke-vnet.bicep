@@ -72,6 +72,10 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
             properties: { serviceName: s.delegation }
           }
         ] : []
+        // Optional service endpoints (e.g. Microsoft.Storage for deploy-script-subnet)
+        serviceEndpoints: contains(s, 'serviceEndpoints') ? map(s.serviceEndpoints, svc => {
+          service: svc
+        }) : []
       }
     }]
   }
