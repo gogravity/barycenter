@@ -26,6 +26,7 @@ param tags object = {}
 // https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 var acrPullRoleId  = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var acrPushRoleId  = '8311e382-0749-4cb8-b61a-304f252e45ec'
+var readerRoleId   = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'  // Reader — control-plane read (registries/read)
 
 resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   name: acrName
@@ -39,8 +40,18 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
 }
 
 // mi-bary-etl: pull images inside CAJ + push via az acr build in etl-cw-nightly.yml.
-// AcrPush is required because az acr build uses the calling identity for control-plane
-// discovery; AcrPull alone returns "not found" (Azure obscures inaccessible resources).
+// Reader is required for az acr build control-plane read (registries/read); neither
+// AcrPull nor AcrPush includes that action — Azure returns AuthorizationFailed without it.
+resource etlAcrReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: acr
+  name: guid(acr.id, etlPrincipalId, readerRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', readerRoleId)
+    principalId: etlPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource etlAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: acr
   name: guid(acr.id, etlPrincipalId, acrPullRoleId)
