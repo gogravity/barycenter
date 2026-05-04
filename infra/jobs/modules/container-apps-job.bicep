@@ -24,6 +24,9 @@ param jobsSubnetId string
 @description('Resource ID of mi-bary-etl (user-assigned identity on the job)')
 param etlIdentityResourceId string
 
+@description('Client ID of mi-bary-etl (set as AZURE_CLIENT_ID so DefaultAzureCredential selects the right user-assigned identity)')
+param etlClientId string
+
 @description('ACR login server (e.g. acrbarydev.azurecr.io)')
 param acrLoginServer string
 
@@ -104,6 +107,10 @@ resource caj 'Microsoft.App/jobs@2025-01-01' = {
           // ${acrLoginServer}/barycenter-etl:<sha> before starting the job.
           image: 'mcr.microsoft.com/azure-cli:latest'
           env: [
+            // AZURE_CLIENT_ID tells DefaultAzureCredential which user-assigned
+            // managed identity to use. Without it, ManagedIdentityCredential
+            // calls IMDS without a client_id hint and gets 400 (no system-assigned MI).
+            { name: 'AZURE_CLIENT_ID',            value: etlClientId }
             { name: 'KEY_VAULT_URL',             value: keyVaultUrl }
             { name: 'SQL_CONNECTION_STRING',      value: sqlConnectionString }
             { name: 'CW_AUTH_MODE',               value: 'basic' }

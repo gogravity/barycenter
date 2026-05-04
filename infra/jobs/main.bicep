@@ -27,6 +27,9 @@ param jobsSubnetId string
 @description('Principal ID of mi-bary-etl')
 param etlPrincipalId string
 
+@description('Client ID of mi-bary-etl (injected as AZURE_CLIENT_ID in the CAJ container)')
+param etlClientId string
+
 @description('Resource ID of mi-bary-etl')
 param etlIdentityResourceId string
 
@@ -87,6 +90,7 @@ module caj 'modules/container-apps-job.bicep' = {
     cajName: cajName
     jobsSubnetId: jobsSubnetId
     etlIdentityResourceId: etlIdentityResourceId
+    etlClientId: etlClientId
     acrLoginServer: acr.outputs.acrLoginServer
     keyVaultUrl: keyVaultUrl
     sqlConnectionString: sqlConnectionString
