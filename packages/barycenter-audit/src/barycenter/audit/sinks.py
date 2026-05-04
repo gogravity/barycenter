@@ -2,9 +2,13 @@
 
 Both sinks are thin adapters over the official Azure SDK clients
 (``azure.monitor.ingestion.LogsIngestionClient`` and
-``azure.storage.blob.AppendBlobClient``). Per CLAUDE.md (D-06): no
+``azure.storage.blob.BlobClient``). Per CLAUDE.md (D-06): no
 exception swallowing — every underlying SDK error propagates verbatim and
 is converted to ``FailClosedAbort`` by ``AuditClient.emit``.
+
+Note: ``azure-storage-blob>=12.24`` removed ``AppendBlobClient`` from the
+public API. Append blob operations (``create_append_blob``, ``append_block``)
+are now available directly on ``BlobClient``.
 """
 from __future__ import annotations
 
