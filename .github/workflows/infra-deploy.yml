@@ -74,8 +74,11 @@ jobs:
         run: |
           az deployment group create -g $RG_IDENTITY -f infra/identity/main.bicep -p infra/identity/main.dev.bicepparam --query properties.outputs -o json > /tmp/identity-outputs.json
           echo "ETL_PRINCIPAL_ID=$(jq -r .etlPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "AZURE_ETL_CLIENT_ID=$(jq -r .etlClientId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "PLATFORM_PRINCIPAL_ID=$(jq -r .platformPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "AUDIT_PRINCIPAL_ID=$(jq -r .auditPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "AZURE_AUDIT_CLIENT_ID=$(jq -r .auditClientId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
+          echo "AUDIT_IDENTITY_RESOURCE_ID=$(jq -r .auditIdentityId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
           echo "ADMIN_PRINCIPAL_ID=$(jq -r .adminPrincipalId.value /tmp/identity-outputs.json)" >> $GITHUB_ENV
       - name: deploy networking
         id: networking
@@ -117,6 +120,11 @@ jobs:
           echo "JOBS_SUBNET_ID=${SPOKE_VNET_ID}/subnets/jobs-subnet" >> $GITHUB_ENV
           export JOBS_SUBNET_ID="${SPOKE_VNET_ID}/subnets/jobs-subnet"
           export ETL_PRINCIPAL_ID="$ETL_PRINCIPAL_ID"
+          export AZURE_ETL_CLIENT_ID="$AZURE_ETL_CLIENT_ID"
+          # Audit identity vars (captured from identity stack outputs above)
+          export AUDIT_PRINCIPAL_ID="$AUDIT_PRINCIPAL_ID"
+          export AZURE_AUDIT_CLIENT_ID="$AZURE_AUDIT_CLIENT_ID"
+          export AUDIT_IDENTITY_RESOURCE_ID="$AUDIT_IDENTITY_RESOURCE_ID"
           export KEY_VAULT_URL="$(jq -r .keyVaultUri.value /tmp/data-outputs.json)"
           export SQL_CONNECTION_STRING="${{ vars.SQL_CONNECTION_STRING }}"
           export DCE_LOGS_INGESTION_ENDPOINT="$DCE_LOGS_INGESTION_ENDPOINT"

@@ -69,9 +69,11 @@ module adminReaderRole 'modules/role-assignment.bicep' = {
 
 output etlIdentityId string = miEtl.outputs.identityId
 output etlPrincipalId string = miEtl.outputs.principalId
+output etlClientId string = miEtl.outputs.clientId
 output platformIdentityId string = miPlatform.outputs.identityId
 output platformPrincipalId string = miPlatform.outputs.principalId
 output auditIdentityId string = miAudit.outputs.identityId
 output auditPrincipalId string = miAudit.outputs.principalId
+output auditClientId string = miAudit.outputs.clientId
 output adminIdentityId string = miAdmin.outputs.identityId
 output adminPrincipalId string = miAdmin.outputs.principalId

@@ -27,6 +27,12 @@ param etlIdentityResourceId string
 @description('Client ID of mi-bary-etl (set as AZURE_CLIENT_ID so DefaultAzureCredential selects the right user-assigned identity)')
 param etlClientId string
 
+@description('Resource ID of mi-bary-audit (second user-assigned identity for audit.chain_state access)')
+param auditIdentityResourceId string
+
+@description('Client ID of mi-bary-audit (set as AUDIT_CLIENT_ID so run.py opens a separate audit SQL connection)')
+param auditClientId string
+
 @description('ACR login server (e.g. acrbarydev.azurecr.io)')
 param acrLoginServer string
 
@@ -75,7 +81,8 @@ resource caj 'Microsoft.App/jobs@2025-01-01' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${etlIdentityResourceId}': {}
+      '${etlIdentityResourceId}': {}   // raw_cw/pseudo/ai_zone + ACR pull + KV secrets
+      '${auditIdentityResourceId}': {} // audit.chain_state SELECT/UPDATE only
     }
   }
   properties: {
@@ -110,13 +117,14 @@ resource caj 'Microsoft.App/jobs@2025-01-01' = {
             // AZURE_CLIENT_ID tells DefaultAzureCredential which user-assigned
             // managed identity to use. Without it, ManagedIdentityCredential
             // calls IMDS without a client_id hint and gets 400 (no system-assigned MI).
-            { name: 'AZURE_CLIENT_ID',            value: etlClientId }
-            { name: 'KEY_VAULT_URL',             value: keyVaultUrl }
-            { name: 'SQL_CONNECTION_STRING',      value: sqlConnectionString }
-            { name: 'CW_AUTH_MODE',               value: 'basic' }
+            { name: 'AZURE_CLIENT_ID',             value: etlClientId }
+            { name: 'AUDIT_CLIENT_ID',             value: auditClientId }
+            { name: 'KEY_VAULT_URL',              value: keyVaultUrl }
+            { name: 'SQL_CONNECTION_STRING',       value: sqlConnectionString }
+            { name: 'CW_AUTH_MODE',                value: 'basic' }
             { name: 'DCE_LOGS_INGESTION_ENDPOINT', value: dceEndpoint }
-            { name: 'DCR_IMMUTABLE_ID',           value: dcrImmutableId }
-            { name: 'WORM_APPEND_BLOB_URL',       value: wormAppendBlobUrl }
+            { name: 'DCR_IMMUTABLE_ID',            value: dcrImmutableId }
+            { name: 'WORM_APPEND_BLOB_URL',        value: wormAppendBlobUrl }
           ]
           resources: {
             cpu: json('0.5')
