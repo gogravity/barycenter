@@ -11,6 +11,7 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write   # to comment with what-if output
+  actions: write         # gh variable set in deploy jobs step
 
 env:
   RG_DEV: rg-barycenter-dev
@@ -128,7 +129,7 @@ jobs:
             --query properties.outputs -o json > /tmp/jobs-outputs.json
           echo "ACR_NAME=$(jq -r .acrName.value /tmp/jobs-outputs.json)" >> $GITHUB_ENV
           # Persist ACR_NAME as a repo variable so etl-cw-nightly.yml can reference it
-          gh variable set ACR_NAME --body "$(jq -r .acrName.value /tmp/jobs-outputs.json)"
+          GH_TOKEN="${{ github.token }}" gh variable set ACR_NAME --body "$(jq -r .acrName.value /tmp/jobs-outputs.json)"
       - name: emit deploy outputs to workflow summary
         run: |
           echo "### Deploy outputs" >> $GITHUB_STEP_SUMMARY
