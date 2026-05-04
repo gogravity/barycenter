@@ -145,6 +145,8 @@ dependencies = [
     { name = "azure-identity" },
     { name = "azure-keyvault-keys" },
     { name = "azure-keyvault-secrets" },
+    { name = "azure-monitor-ingestion" },
+    { name = "azure-storage-blob" },
     { name = "barycenter-audit" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -161,11 +163,18 @@ dev = [
     { name = "respx" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "respx" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "azure-identity", specifier = ">=1.19" },
     { name = "azure-keyvault-keys", specifier = ">=4.10" },
     { name = "azure-keyvault-secrets", specifier = ">=4.9" },
+    { name = "azure-monitor-ingestion", specifier = ">=1.0" },
+    { name = "azure-storage-blob", specifier = ">=12.24" },
     { name = "barycenter-audit", editable = "../barycenter-audit" },
     { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5" },
     { name = "httpx", specifier = ">=0.28" },
@@ -178,6 +187,9 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.1" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "respx", specifier = ">=0.23.1" }]
 
 [[package]]
 name = "certifi"
