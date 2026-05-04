@@ -124,7 +124,10 @@ def main(argv: list[str] | None = None) -> int:
 
     dce_endpoint = os.environ["DCE_LOGS_INGESTION_ENDPOINT"]
     dcr_id = os.environ["DCR_IMMUTABLE_ID"]
-    stream = os.environ.get("DCR_STREAM_NAME", "Custom-AuditEvents_CL")
+    # DCR stream name is the INPUT stream (streamDeclarations key), not the output table.
+    # The _CL suffix is LA's auto-appended table name. The Logs Ingestion API requires
+    # the input stream name: 'Custom-AuditEvents' → table 'Custom-AuditEvents_CL'.
+    stream = os.environ.get("DCR_STREAM_NAME", "Custom-AuditEvents")
     worm_url = os.environ["WORM_APPEND_BLOB_URL"]
     # All three audit sinks use audit_cred (mi-bary-audit):
     # - LA: Monitoring Metrics Publisher on DCR granted to mi-bary-audit (Bicep)
