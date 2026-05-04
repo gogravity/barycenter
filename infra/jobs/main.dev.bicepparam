@@ -10,6 +10,7 @@ param jobsSubnetId = readEnvironmentVariable('JOBS_SUBNET_ID', '')
 
 // Identity (plan 03)
 param etlPrincipalId    = readEnvironmentVariable('ETL_PRINCIPAL_ID', '')
+param etlClientId       = readEnvironmentVariable('AZURE_ETL_CLIENT_ID', '')
 param etlIdentityResourceId = readEnvironmentVariable('ETL_IDENTITY_RESOURCE_ID', '')
 param deployPrincipalId = readEnvironmentVariable('DEPLOY_PRINCIPAL_ID', '')
 
