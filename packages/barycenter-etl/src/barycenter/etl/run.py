@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Real path: import lazily so dry-run doesn't require Azure SDKs.
+    import struct
+
     import pyodbc  # type: ignore[import-not-found]
     from azure.identity import DefaultAzureCredential
     from azure.keyvault.secrets import SecretClient
@@ -80,7 +82,21 @@ def main(argv: list[str] | None = None) -> int:
     sql_conn_str = os.environ["SQL_CONNECTION_STRING"]
     cred = DefaultAzureCredential()
     kv = SecretClient(vault_url=kv_url, credential=cred)
-    sql = pyodbc.connect(sql_conn_str)
+
+    # Use azure-identity to acquire the SQL token — ODBC Driver 18's built-in
+    # Authentication=ActiveDirectoryMsi does not reliably detect the
+    # IDENTITY_ENDPOINT used by Container Apps (it looks for the Azure VM IMDS
+    # instead). Passing the token via SQL_COPT_SS_ACCESS_TOKEN bypasses the
+    # driver's MSI path and uses the already-working DefaultAzureCredential.
+    SQL_COPT_SS_ACCESS_TOKEN = 1256
+    _sql_token = cred.get_token("https://database.windows.net/.default").token
+    _token_bytes = _sql_token.encode("utf-16-le")
+    _token_struct = struct.pack("<I", len(_token_bytes)) + _token_bytes
+    # Strip Authentication= keyword — it conflicts with attrs_before token auth.
+    _base_conn_str = ";".join(
+        p for p in sql_conn_str.split(";") if not p.strip().lower().startswith("authentication")
+    )
+    sql = pyodbc.connect(_base_conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token_struct})
 
     # Sink construction follows Phase 1 conventions: env-driven SDK clients
     # injected into the thin sink wrappers. If a future ops change relocates

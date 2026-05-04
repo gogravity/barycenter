@@ -51,6 +51,23 @@ param wormAppendBlobUrl string
 @description('Tags applied to all resources')
 param tags object
 
+// Built-in Contributor role
+// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
+var contributorRoleId = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+
+// mi-bary-etl needs Contributor at RG scope to manage the CAJ (update image, start
+// executions, poll status). Microsoft.App/jobs does not support resource-level RBAC
+// — az role assignment create at the job or CAE resource scope returns 400 Bad Request.
+// AcrPull/AcrPush on ACR + data-plane KV/SQL roles are unaffected by this RG grant.
+resource etlRgContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, etlPrincipalId, contributorRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', contributorRoleId)
+    principalId: etlPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 module acr 'modules/container-registry.bicep' = {
   name: 'container-registry'
   params: {
