@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     # injected into the thin sink wrappers. If a future ops change relocates
     # these helpers, update here in coordination with barycenter-audit.
     from azure.monitor.ingestion import LogsIngestionClient
-    from azure.storage.blob import AppendBlobClient
+    from azure.storage.blob import BlobClient
 
     dce_endpoint = os.environ["DCE_LOGS_INGESTION_ENDPOINT"]
     dcr_id = os.environ["DCR_IMMUTABLE_ID"]
@@ -117,7 +117,9 @@ def main(argv: list[str] | None = None) -> int:
     # is idempotent when the blob already exists — ResourceExistsError is expected
     # on every run after the first and is not a fault condition.
     from azure.core.exceptions import ResourceExistsError
-    _worm_blob_client = AppendBlobClient.from_blob_url(worm_url, credential=cred)
+    # azure-storage-blob>=12.24 removed AppendBlobClient from the public API;
+    # append blob operations (create_append_blob, append_block) are now on BlobClient.
+    _worm_blob_client = BlobClient.from_blob_url(worm_url, credential=cred)
     try:
         _worm_blob_client.create_append_blob()
     except ResourceExistsError:
