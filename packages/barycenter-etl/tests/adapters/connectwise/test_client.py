@@ -23,8 +23,10 @@ from barycenter.etl.adapters.connectwise.client import (
 from barycenter.etl.framework.exceptions import RateLimitExhausted
 
 
-SERVER = "https://api-na.myconnectwise.net"
-BASE = f"{SERVER}/v4_6_release/apis/3.0"
+# server_url must be the full API base path (matches api-cw-server-url KV secret format).
+# The client uses it verbatim as the httpx base_url — no suffix is appended.
+SERVER = "https://api-na.myconnectwise.net/v4_6_release/apis/3.0"
+BASE = SERVER
 
 
 def _client(rpm: int = 6000, page_size: int = 2) -> CWManageClient:

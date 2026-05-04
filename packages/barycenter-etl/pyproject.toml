@@ -37,3 +37,8 @@ barycenter-audit = { path = "../barycenter-audit", editable = true }
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "respx>=0.23.1",
+]

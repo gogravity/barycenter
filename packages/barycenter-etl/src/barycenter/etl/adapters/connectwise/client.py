@@ -82,8 +82,11 @@ class CWManageClient:
         self._page_size = page_size
         self._min_interval = 60.0 / rpm
         self._last_request = 0.0
+        # server_url (from api-cw-server-url KV secret) already includes the full
+        # API base path (e.g. https://na.myconnectwise.net/v4_6_release/apis/3.0).
+        # Use it directly so paths like /finance/agreements resolve correctly.
         self._client = httpx.Client(
-            base_url=f"{server_url.rstrip('/')}/v4_6_release/apis/3.0",
+            base_url=server_url.rstrip('/'),
             headers={
                 "Accept": (
                     f"application/vnd.connectwise.com+json; version={api_version}"
