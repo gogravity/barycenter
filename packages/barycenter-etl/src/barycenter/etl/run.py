@@ -80,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
     kv_url = os.environ["KEY_VAULT_URL"]
     sql_conn_str = os.environ["SQL_CONNECTION_STRING"]
+    # AZURE_CLIENT_ID selects mi-bary-etl (raw_cw/pseudo/ai_zone access).
     cred = DefaultAzureCredential()
     kv = SecretClient(vault_url=kv_url, credential=cred)
 
@@ -89,14 +90,31 @@ def main(argv: list[str] | None = None) -> int:
     # instead). Passing the token via SQL_COPT_SS_ACCESS_TOKEN bypasses the
     # driver's MSI path and uses the already-working DefaultAzureCredential.
     SQL_COPT_SS_ACCESS_TOKEN = 1256
-    _sql_token = cred.get_token("https://database.windows.net/.default").token
-    _token_bytes = _sql_token.encode("utf-16-le")
-    _token_struct = struct.pack("<I", len(_token_bytes)) + _token_bytes
-    # Strip Authentication= keyword — it conflicts with attrs_before token auth.
-    _base_conn_str = ";".join(
-        p for p in sql_conn_str.split(";") if not p.strip().lower().startswith("authentication")
+
+    def _make_sql_conn(token_cred) -> "pyodbc.Connection":
+        """Open a SQL connection using a managed-identity token."""
+        _tok = token_cred.get_token("https://database.windows.net/.default").token
+        _tok_bytes = _tok.encode("utf-16-le")
+        _tok_struct = struct.pack("<I", len(_tok_bytes)) + _tok_bytes
+        _base = ";".join(
+            p for p in sql_conn_str.split(";")
+            if not p.strip().lower().startswith("authentication")
+        )
+        return pyodbc.connect(_base, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _tok_struct})
+
+    sql = _make_sql_conn(cred)
+
+    # mi-bary-etl has DENY on the audit schema; audit.chain_state must be
+    # accessed via the mi-bary-audit identity (SELECT/UPDATE only).
+    # AUDIT_CLIENT_ID is injected by the CAJ alongside AZURE_CLIENT_ID.
+    from azure.identity import ManagedIdentityCredential
+    audit_client_id = os.environ.get("AUDIT_CLIENT_ID", "")
+    audit_cred = (
+        ManagedIdentityCredential(client_id=audit_client_id)
+        if audit_client_id
+        else cred  # fallback for local dev (single identity)
     )
-    sql = pyodbc.connect(_base_conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token_struct})
+    audit_sql = _make_sql_conn(audit_cred)
 
     # Sink construction follows Phase 1 conventions: env-driven SDK clients
     # injected into the thin sink wrappers. If a future ops change relocates
@@ -125,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     except ResourceExistsError:
         pass  # already exists — normal on every run after the first
     worm = WormBlobSink(_worm_blob_client)
-    audit = AuditClient(sql, la, worm)
+    audit = AuditClient(audit_sql, la, worm)
     adapter = ADAPTERS[args.adapter](audit, sql, kv)
     results = adapter.run()
     print(f"Results: {results}")

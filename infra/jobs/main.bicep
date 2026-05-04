@@ -33,6 +33,15 @@ param etlClientId string
 @description('Resource ID of mi-bary-etl')
 param etlIdentityResourceId string
 
+@description('Principal ID of mi-bary-audit (audit.chain_state access)')
+param auditPrincipalId string
+
+@description('Client ID of mi-bary-audit (injected as AUDIT_CLIENT_ID in the CAJ container)')
+param auditClientId string
+
+@description('Resource ID of mi-bary-audit (second user-assigned identity on the CAJ)')
+param auditIdentityResourceId string
+
 @description('Principal ID of mi-bary-deploy (AcrPush for CI builds)')
 param deployPrincipalId string
 
@@ -91,6 +100,8 @@ module caj 'modules/container-apps-job.bicep' = {
     jobsSubnetId: jobsSubnetId
     etlIdentityResourceId: etlIdentityResourceId
     etlClientId: etlClientId
+    auditIdentityResourceId: auditIdentityResourceId
+    auditClientId: auditClientId
     acrLoginServer: acr.outputs.acrLoginServer
     keyVaultUrl: keyVaultUrl
     sqlConnectionString: sqlConnectionString
