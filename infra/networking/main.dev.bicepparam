@@ -11,6 +11,7 @@ param spokeVnetName = 'vnet-bary-spoke'
 param keyVaultResourceId = '/subscriptions/PLACEHOLDER/resourceGroups/rg-barycenter-data/providers/Microsoft.KeyVault/vaults/kv-bary-dev'
 param deployFortigate = true
 param fortigateTrustNicIp = '10.10.1.4'
+param fortigateVmSize = 'Standard_F4s_v2'
 param adminSshPublicKey = readEnvironmentVariable('FGT_ADMIN_SSH_PUBLIC_KEY', 'ssh-rsa PLACEHOLDER')
 param spokeSubnets = [
   { name: 'etl-subnet',      cidr: '10.20.0.0/26' }

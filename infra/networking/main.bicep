@@ -47,6 +47,9 @@ param spokeSubnets array = [
 @description('FortiGate trust NIC IP — also the next-hop for spoke UDRs.')
 param fortigateTrustNicIp string = '10.10.1.4'
 
+@description('FortiGate VM size. Standard_F2s_v2 default; use Standard_F4s_v2 if capacity restricted.')
+param fortigateVmSize string = 'Standard_F2s_v2'
+
 @description('Tags propagated to all created resources.')
 param tags object = {}
 
@@ -77,6 +80,7 @@ module fortigate 'modules/fortigate-vm.bicep' = if (deployFortigate) {
     trustNicIp: fortigateTrustNicIp
     keyVaultResourceId: keyVaultResourceId
     adminSshPublicKey: adminSshPublicKey
+    vmSize: fortigateVmSize
     tags: tags
   }
 }
